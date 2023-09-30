@@ -3,208 +3,230 @@
 #include <version>
 #include <iterator>
 #include <concepts>
+#include <compare>
 
 namespace dark {
 
-template <class traits>
-concept advance_iterator = requires (typename traits::node_type *__ptr) {
-    traits::advance(__ptr);
+namespace helper {
+
+/**
+ * @brief A helper struct for iterator.
+ * It works as a wrapper of the iterator traits.
+ */
+template <class _Traits, class _Tp, bool _Dir>
+requires std::same_as <typename _Traits::node_type, std::decay_t <_Tp>>
+static void advance_pointer(_Tp *&__ptr) noexcept {
+    if constexpr (_Dir == false) {
+        _Traits::backtrace(__ptr);
+    } else {
+        _Traits::advance(__ptr);
+    }
+}
+
+template <class _Traits, class _Tp, bool _Dir>
+requires std::same_as <typename _Traits::node_type, std::decay_t <_Tp>>
+static void advance_pointer(_Tp *&__ptr, std::ptrdiff_t __n) noexcept {
+    if constexpr (_Dir == false) {
+        _Traits::backtrace(__ptr, __n);
+    } else {
+        _Traits::advance(__ptr, __n);
+    }
+}
+
+/**
+ * @brief A normal pointer as iterator.
+ * Implement the basic iterator traits.
+ * 
+ */
+struct normal_pointer {
+    template <class _Tp>
+    static void advance(_Tp *&__ptr, std::ptrdiff_t __n = 1) noexcept { __ptr += __n; }
+    template <class _Tp>
+    static void backtrace(_Tp *&__ptr, std::ptrdiff_t __n = 1) noexcept { __ptr -= __n; }
+    template <class _Tp>
+    static auto difference(_Tp *__lhs, _Tp *__rhs) noexcept { return __lhs - __rhs; }
+    template <class _Tp>
+    static _Tp &dereference(_Tp *__ptr) noexcept { return *__ptr; }
+    template <class _Tp>
+    static auto compare(_Tp *__lhs, _Tp *__rhs) noexcept { return __lhs <=> __rhs; }
 };
 
-template <class traits>
-concept backtrace_iterator = requires (typename traits::node_type *__ptr) {
-    traits::backtrace(__ptr);
-};
 
+} // namespace helper
 
-template <class traits,bool dir>
-concept advance_iterator_dir =
-    ( dir && advance_iterator   <traits>) 
-||  (!dir && backtrace_iterator <traits>);
+/**
+ * @brief Wrapper of basic type pointer as iterator.
+ * 
+ * @tparam _Traits Iterator traits.
+ * @tparam _Const  True for const_iterator, false for non_const_iterator.
+ * @tparam _Dir    True for forward iterator, false for backward iterator.
+ */
+template <class _Traits, bool _Const, bool _Dir>
+struct basic_iterator {
+  protected:
+    /* Inner data. */
 
-template <class traits,bool dir>
-concept backtrace_iterator_dir =
-    ( dir && backtrace_iterator <traits>)
-||  (!dir && advance_iterator   <traits>);
+    using _Node_type = typename _Traits::node_type;
+    using _Data_type = std::conditional_t <_Const,const _Node_type, _Node_type>;
+    _Data_type *node;
 
+  public:
+    using iterator_category = typename _Traits::iterator_category;
+    using difference_type   = typename _Traits::difference_type;
+    using compare_type      = typename _Traits::compare_type;
 
-template <class traits>
-concept random_access_iterator = requires (
-    typename traits::node_type *__ptr,
-    typename traits::difference_type __n) {
-    traits::advance(__ptr,__n);
-};
+    using value_type        = std::conditional_t <_Const,
+        const typename _Traits::value_type, typename _Traits::value_type>;
+    using pointer           = value_type *;
+    using reference         = value_type &;
 
+  public:
+    /* Construct from nothing. */
+    basic_iterator() noexcept : node() {}
 
-template <class traits>
-concept normal_iterator = requires (typename traits::node_type *__ptr) {
-    {traits::value_address(__ptr)} -> std::same_as <typename traits::value_type *>;
-    typename traits::value_type;
-    typename traits::node_type;
-    typename traits::difference_type;
-    typename traits::iterator_category;
-};
+    /**
+     * @brief Construct the iterator from a pointer explicitly.
+     * @param __ptr Pointer of the inner data.
+     */
+    explicit basic_iterator(_Data_type *__ptr) noexcept : node(__ptr) {}
 
+    /**
+     * @brief Construct from an non_const_iterator to a const_iterator.
+     * Of course, the reverse is not allowed.
+     */
+    template <void * = nullptr>
+    requires (_Const == true)
+    basic_iterator(basic_iterator <_Traits,false,_Dir> __rhs)
+    noexcept : node(__rhs.base()) {}
 
-template <class traits,bool is_const,bool dir = true>
-requires normal_iterator <traits> && advance_iterator_dir <traits,dir>
-struct iterator {
-    /* Basic 4 requirements. */
-    using difference_type   = traits::difference_type;
-    using value_type        = traits::value_type;
-    using iterator_category = traits::iterator_category; 
-    using node_type         = std::conditional_t
-        <is_const, const typename traits::node_type, typename traits::node_type>;
+    basic_iterator(const basic_iterator &) noexcept = default;
+    basic_iterator &operator = (const basic_iterator &) noexcept = default;
 
-    using reference         = std::conditional_t
-        <is_const, const value_type &, value_type &>;
-    using pointer           = std::conditional_t
-        <is_const, const value_type *, value_type *>;
+    reference operator  *() const noexcept { return _Traits::dereference(node); }
+    pointer   operator ->() const noexcept { return   std::addressof(*this);    }
 
-    node_type *data;
+    basic_iterator &operator ++() noexcept {
+        helper::advance_pointer <_Traits,_Data_type,_Dir> (node);
+        return *this;
+    }
 
-    template <bool __dir>
-    inline void advance() noexcept {
-        if constexpr (__dir) {
-            traits::advance(data);
+    basic_iterator &operator --() noexcept {
+        helper::advance_pointer <_Traits,_Data_type,!_Dir> (node);
+        return *this;
+    }
+
+    basic_iterator &operator += (difference_type __n) noexcept {
+        helper::advance_pointer <_Traits,_Data_type,_Dir> (node, __n);
+        return *this;
+    }
+
+    basic_iterator &operator -= (difference_type __n) noexcept {
+        helper::advance_pointer <_Traits,_Data_type,!_Dir> (node, __n);
+        return *this;
+    }
+
+    friend difference_type operator -
+        (basic_iterator __lhs, basic_iterator __rhs) noexcept {
+        return _Traits::difference(__lhs.node, __rhs.node);
+    }
+
+    /**
+     * @brief Judge whether 2 iterators point to the same data.
+     * @param __lhs Left  hand side.
+     * @param __rhs Right hand side.
+     * @return True iff 2 iterators point to the same data.
+     */
+    friend bool operator == (basic_iterator __lhs, basic_iterator __rhs) noexcept {
+        return __lhs.node == __rhs.node;
+    }
+
+    /**
+     * @brief Three-way comparison for random access iterator.
+     * @param __lhs Left  hand side.
+     * @param __rhs Right hand side.
+     * @return The result of comparison.
+     */
+    friend auto operator <=> (basic_iterator __lhs, basic_iterator __rhs) noexcept {
+        if constexpr (_Dir == false) {
+            return _Traits::compare(__rhs.node, __lhs.node);
         } else {
-            traits::backtrace(data);
+            return _Traits::compare(__lhs.node, __rhs.node);
         }
     }
 
-    template <bool __dir>
-    inline void advance(difference_type __n) noexcept {
-        if constexpr (__dir) {
-            traits::advance(data,__n);
-        } else {
-            traits::advance(data,-__n);
-        }
+    /**
+     * @return Return the inner data pointer.
+     */
+    _Data_type *base() const noexcept { return node; }
+
+    /**
+     * @return Return the reverse iterator pointing to the same data.
+     */
+    basic_iterator <_Traits,_Const,!_Dir> reverse() const noexcept {
+        return basic_iterator <_Traits,_Const,!_Dir> { node };
     }
 
   public:
+    /* All functions below are generated from the basic. */
 
-    iterator() noexcept = default;
-    iterator(const iterator &) noexcept = default;
-    iterator &operator = (const iterator &) noexcept = default;
-
-    explicit iterator(node_type *__data) noexcept : data(__data) {}
-    node_type *base() const noexcept { return data; }
-
-
-    template <void * = nullptr>
-    requires advance_iterator_dir <traits,dir>
-    iterator &operator ++(void) noexcept { advance <dir> (); return *this; }
-
-    template <void * = nullptr>
-    requires advance_iterator_dir <traits,dir>
-    iterator operator ++(int) noexcept {
-        iterator __tmp = *this; this->operator++(); return __tmp;
+    value_type &operator [](difference_type __n) const noexcept {
+        basic_iterator __tmp { *this };
+        return *(__tmp += __n);
     }
 
-    template <void * = nullptr>
-    requires backtrace_iterator_dir <traits,dir>
-    iterator &operator --(void) noexcept { advance <!dir> (); return *this; }
-
-    template <void * = nullptr>
-    requires backtrace_iterator_dir <traits,dir>
-    iterator operator --(int) noexcept {
-        iterator __tmp = *this; this->operator--(); return __tmp;
+    basic_iterator operator ++(int) noexcept {
+        basic_iterator __tmp { *this };
+        this->operator++();
+        return __tmp;
     }
 
-    template <void * = nullptr>
-    requires random_access_iterator <traits>
-    iterator operator += (difference_type __n) noexcept {
-        advance <dir> (__n); return *this;
+    basic_iterator operator --(int) noexcept {
+        basic_iterator __tmp { *this };
+        this->operator--();
+        return __tmp;
     }
 
-    template <void * = nullptr>
-    requires random_access_iterator <traits>
-    iterator operator -= (difference_type __n) noexcept {
-        advance <!dir> (__n); return *this;
+    friend basic_iterator operator +
+        (basic_iterator __lhs, difference_type __n) noexcept {
+        basic_iterator __tmp { __lhs };
+        return __tmp += __n;
     }
 
-    reference operator * (void) const noexcept { return *traits::value_address(data); }
-    pointer   operator ->(void) const noexcept { return  traits::value_address(data); }
+    friend basic_iterator operator +
+        (difference_type __n, basic_iterator __rhs) noexcept {
+        basic_iterator __tmp { __rhs };
+        return __tmp += __n;
+    }
 
-    template <void * = nullptr>
-    requires random_access_iterator <traits>
-    reference operator [] (difference_type __n) const noexcept {
-        iterator __tmp = *this; return *(__tmp += __n);
+    friend basic_iterator operator -
+        (basic_iterator __lhs, difference_type __n) noexcept {
+        basic_iterator __tmp { __lhs };
+        return __tmp -= __n;
     }
 
 };
 
 
-template <class traits,bool k1,bool k2,bool dir>
-bool operator == (const iterator <traits,k1,dir> &__lhs,
-                  const iterator <traits,k2,dir> &__rhs) noexcept {
-    return __lhs.base() == __rhs.base();
-}
 
-
-template <class traits,bool k1,bool k2,bool dir>
-bool operator != (const iterator <traits,k1,dir> &__lhs,
-                  const iterator <traits,k2,dir> &__rhs) noexcept {
-    return __lhs.base() != __rhs.base();
-}
-
-
-
-template <class traits,bool is_const,bool dir>
-requires random_access_iterator <traits>
-iterator <traits,is_const,dir> operator + (
-    iterator <traits,is_const,dir> __lhs,
-    typename iterator <traits,is_const,dir>::difference_type __n
-) noexcept {
-    auto __tmp = __lhs;
-    return __tmp += __n;
-};
-
-
-template <class traits,bool is_const,bool dir>
-requires random_access_iterator <traits>
-iterator <traits,is_const,dir> operator + (
-    typename iterator <traits,is_const,dir>::difference_type __n,
-    iterator <traits,is_const,dir> __rhs
-) noexcept {
-    auto __tmp = __rhs;
-    return __tmp += __n;
-};
-
-
-template <class traits,bool is_const,bool dir>
-requires random_access_iterator <traits>
-iterator <traits,is_const,dir> operator - (
-    iterator <traits,is_const,dir> __lhs,
-    typename iterator <traits,is_const,dir>::difference_type __n
-) noexcept {
-    auto __tmp = __lhs;
-    return __tmp -= __n;
-};
-
-
-template <class T>
-struct pointer_iterator_trait {
+/**
+ * @brief The traits of a pointer.
+ * @tparam _Tp Type of the inner data.
+ * @tparam ..._Tags The custom tags.
+ */
+template <class _Tp, class ..._Tags>
+struct pointer_traits : helper::normal_pointer {
+    using node_type         = _Tp;
+    using value_type        = _Tp;
     using difference_type   = std::ptrdiff_t;
     using iterator_category = std::contiguous_iterator_tag;
-    using node_type         = T;
-    using value_type        = T;
-
-    static void advance(T *&__ptr) noexcept { ++__ptr; }
-    static void backtrace(T *&__ptr) noexcept { --__ptr; }
-    static void advance(T *&__ptr,difference_type __n) noexcept { __ptr += __n; }
-    static value_type *value_address(node_type *__ptr) noexcept { return __ptr; }
-
-    /* You can not create an entity of trait class. */
-    pointer_iterator_trait() = delete;
+    using pointer           = value_type *;
+    using reference         = value_type &;
+    using compare_type      = std::__detail::__synth3way_t <pointer>;
 };
 
-
-template <class T,bool is_const,bool dir = true>
-using pointer_iterator = iterator <pointer_iterator_trait <T>,is_const,dir>;
-
+template <class _Tp, bool _Const, bool _Dir = false>
+using pointer_iterator = basic_iterator <pointer_traits <_Tp>,_Const,_Dir>;
 
 
-}
-
+} // namespace dark
 
