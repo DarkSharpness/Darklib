@@ -1,14 +1,17 @@
 #pragma once
 
+#ifdef _DARK_DEBUG
 #include "../basic/debug.h"
+#endif
 
 #include <cstdlib>
 #include <type_traits>
+#include <utility>
 
 
 namespace dark {
 
-#ifdef _DEBUG
+#ifdef _DARK_DEBUG
 
 class allocator_debugger;
 
@@ -97,8 +100,8 @@ inline void free(void *__ptr) noexcept {
 
 #else
 
-using ::malloc;
-using ::free;
+using ::std::malloc;
+using ::std::free;
 
 #endif
 
@@ -131,8 +134,15 @@ struct allocator {
 
 
 template <class T>
+requires std::is_constructible_v <T>
+inline void construct(T *__ptr)
+noexcept(noexcept(::new (__ptr) T()))
+{ ::new(__ptr) T(); }
+
+
+template <class T>
 requires std::is_copy_constructible_v <T>
-inline void construct(T *__ptr, const T &__val) 
+inline void construct(T *__ptr, const T &__val)
 noexcept(noexcept(::new(__ptr) T(__val)))
 { ::new(__ptr) T(__val); }
 
