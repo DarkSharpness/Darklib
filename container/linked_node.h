@@ -8,10 +8,9 @@
 namespace dark::list_base {
 
 /* Node for forward list. */
-struct forward_node_base  {
+struct forward_node_base {
     /* The target node of current node. */
     forward_node_base *node;
-    inline forward_node_base *get_next() const noexcept { return node; }
 };
 
 /* Node for linked list. */
@@ -23,9 +22,6 @@ struct linked_node_base {
         };
         linked_node_base *link[2]; /* An alias of prev and next. */
     };
-
-    inline linked_node_base *get_next() const noexcept { return next; }
-    inline linked_node_base *get_prev() const noexcept { return prev; }
 };
 
 }
@@ -106,6 +102,20 @@ inline linked_node_base *unlink_after(linked_node_base *__node)
 noexcept {  return unlink_dir <false> (__node); }
 
 /**
+ * @brief Unlink current node.
+ * @param __node The node to be unlinked.
+ * @return The unlinked node.
+ */
+inline linked_node_base *unlink_node(linked_node_base *__node) noexcept {
+    linked_node_base *__prev = __node->prev;
+    linked_node_base *__next = __node->next;
+    __prev->next = __next;
+    __next->prev = __prev;
+    return __node;
+}
+
+
+/**
  * @brief Unlink the node before current node.
  * 
  * @param __node Current node.
@@ -137,32 +147,44 @@ using linked_node  = value_node <linked_node_base,T,list_node_tag>;
 /* Iterators. */
 namespace dark::list_base {
 
+namespace helper {
 
-template <class list_node_type>
-requires std::is_base_of_v <list_node_tag,list_node_type>
-struct list_iterator_trait {
-    list_iterator_trait() = delete;
+struct list_pointer {
+    static void advance (forward_node_base *&__ptr)         noexcept { __ptr = __ptr->node; }
+    static void advance (const forward_node_base *&__ptr)   noexcept { __ptr = __ptr->node; }
+    static void advance  (linked_node_base *&__ptr)         noexcept { __ptr = __ptr->next; }
+    static void advance (const linked_node_base *&__ptr)    noexcept { __ptr = __ptr->next; }
+
+    static void backtrace(linked_node_base *&__ptr)         noexcept { __ptr = __ptr->prev; }
+    static void backtrace(const linked_node_base *&__ptr)   noexcept { __ptr = __ptr->prev; }
+};
+
+
+} // namespace helper
+
+
+template <class _List_Node>
+requires std::is_base_of_v <list_node_tag, _List_Node>
+struct list_iterator_trait : helper::list_pointer {
+    using node_type         = typename _List_Node::base_type;
+    using value_type        = typename _List_Node::value_type;
     using difference_type   = std::ptrdiff_t;
     using iterator_category = std::bidirectional_iterator_tag;
-    using node_type         = typename list_node_type::base_type;
-    using value_type        = typename list_node_type::value_type;
+    using pointer           = value_type *;
+    using reference         = value_type &;
+    using compare_type      = void;
 
-    static void advance  (node_type *&__node)
-    noexcept { __node = static_cast <list_node_type *> (__node)->get_next(); }
-
-    template <void * = nullptr>
-    requires requires(node_type *__node) { __node->get_prev(); }
-    static void backtrace(node_type *&__node)
-    noexcept { __node = static_cast <list_node_type *> (__node)->get_prev(); }
-
-    static value_type *value_address(node_type *__node)
-    noexcept { return &static_cast <list_node_type *> (__node)->data; }
-
+    static value_type &dereference(node_type *__ptr) noexcept {
+        return static_cast <_List_Node *> (__ptr)->data;
+    }
+    static const value_type &dereference(const node_type *__ptr) noexcept {
+        return static_cast <const _List_Node *> (__ptr)->data;
+    }
 };
 
 
 template <class T,bool is_const,bool dir = true>
-using list_iterator = iterator <list_iterator_trait <T>,is_const,dir>;
+using list_iterator = basic_iterator <list_iterator_trait <T>,is_const,dir>;
 
 
 }
