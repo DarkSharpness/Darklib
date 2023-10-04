@@ -35,7 +35,7 @@ namespace dark::list_base {
  * @param __node Current node. 
  * @param __prev Previous node.
  */
-void link_after(forward_node_base *__node,
+inline void link_after(forward_node_base *__node,
                 forward_node_base *__prev) noexcept {
     __node->node = __prev->node;
     __prev->node = __node;
@@ -50,7 +50,7 @@ void link_after(forward_node_base *__node,
  * @param __targ Target node.
  */
 template <bool __dir>
-void link_dir(linked_node_base *__node, linked_node_base *__targ)
+inline void link_dir(linked_node_base *__node, linked_node_base *__targ)
 noexcept {
     __targ->link[ __dir] = __node->link[__dir];
     __targ->link[!__dir] = __node;
@@ -85,7 +85,7 @@ noexcept { return link_dir <true> (__node,__prev); }
  * @return Return the unlinked node.
  */
 template <bool __dir>
-linked_node_base *unlink_dir(linked_node_base *__node) noexcept {
+inline linked_node_base *unlink_dir(linked_node_base *__node) noexcept {
     linked_node_base *__link = __node->link[__dir];
     __node->link[__dir] = __link->link[__dir];
     __link->link[__dir]->link[!__dir] = __node;

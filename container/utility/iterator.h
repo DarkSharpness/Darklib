@@ -41,7 +41,7 @@ namespace helper {
  */
 template <class _Traits, bool _Dir, class _Tp>
 requires std::same_as <typename _Traits::node_type, std::decay_t <_Tp>>
-static void advance_pointer(_Tp *&__ptr) noexcept {
+inline static void advance_pointer(_Tp *&__ptr) noexcept {
     if constexpr (_Dir == false) {
         _Traits::backtrace(__ptr);
     } else {
@@ -52,7 +52,7 @@ static void advance_pointer(_Tp *&__ptr) noexcept {
 
 template <class _Traits, bool _Dir, class _Tp>
 requires std::same_as <typename _Traits::node_type, std::decay_t <_Tp>>
-static void advance_pointer(_Tp *&__ptr, std::ptrdiff_t __n) noexcept {
+inline static void advance_pointer(_Tp *&__ptr, std::ptrdiff_t __n) noexcept {
     if constexpr (_Dir == false) {
         _Traits::backtrace(__ptr, __n);
     } else {

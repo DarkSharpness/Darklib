@@ -79,11 +79,10 @@ class allocator_debugger {
         if(!--__obj->refer_count) delete __obj;
     }
     void *allocate(size_t __n) noexcept {
-        return __obj->allocate(::malloc(__n + __obj->offset),__n);
+        return __obj->allocate(::std::malloc(__n + __obj->offset),__n);
     }
-
     void deallocate(void *__ptr) noexcept {
-        ::free(__obj->deallocate(__ptr));
+        ::std::free(__obj->deallocate(__ptr));
     }
 };
 
@@ -105,8 +104,86 @@ using ::std::free;
 
 #endif
 
+/* Basic construction part (Default/Copy/Move) */
 
-/* Trivial allocator. */
+
+template <class _Tp>
+requires std::constructible_from <_Tp>
+inline void construct(_Tp *__ptr)
+noexcept(noexcept(::new (__ptr) _Tp()))
+{ ::new(__ptr) _Tp(); }
+
+template <class _Tp>
+requires std::copy_constructible <_Tp>
+inline void construct(_Tp *__ptr, const _Tp &__val)
+noexcept(noexcept(::new(__ptr) _Tp(__val)))
+{ ::new(__ptr) _Tp(__val); }
+
+template <class _Tp>
+requires std::move_constructible <_Tp>
+inline void construct(_Tp *__ptr, _Tp &&__val)
+noexcept(noexcept(::new(__ptr) _Tp(std::move(__val))))
+{ ::new (__ptr) _Tp(std::move(__val)); }
+
+
+/* Non-basic construction part. */
+
+
+template <class _Tp,class _Up>
+requires std::constructible_from <_Tp, _Up> && (!std::is_same_v <_Tp, _Up>)
+inline void construct(_Tp *__ptr, _Up &&__val)
+noexcept(noexcept(::new (__ptr) _Tp(std::forward <_Up>(__val))))
+{ ::new (__ptr) _Tp(std::forward <_Up>(__val)); }
+
+template <class _Tp,class ..._Args>
+requires std::constructible_from <_Tp, _Args...>
+inline void construct(_Tp *__ptr, _Args &&...__val)
+noexcept(noexcept(::new (__ptr) _Tp(std::forward <_Args>(__val)...)))
+{ ::new (__ptr) _Tp(std::forward <_Args>(__val)...); }
+
+
+/* Destruction part. */
+
+/**
+ * @brief Special version for trivially destructible type.
+ * It can be used to avoid the overhead of calling destructor.
+ */
+template <class T>
+requires std::is_trivially_destructible_v <T>
+inline void destroy(T *) noexcept {}
+
+/**
+ * @brief Special version for trivially destructible type.
+ * It can be used to avoid the overhead of calling destructor.
+ * It avoids a loop when the type is trivially destructible.
+ */
+template <class T>
+requires std::is_trivially_destructible_v <T>
+inline void destroy(T *__ptr, [[maybe_unused]] size_t __n) noexcept {}
+
+/**
+ * @brief Destory the object pointed by __ptr.
+ * @param __ptr Pointer to the object. 
+ */
+template <class T>
+requires (!std::is_trivially_destructible_v <T>)
+inline void destroy(T *__ptr)
+noexcept(std::is_nothrow_destructible_v <T>)
+{ __ptr->~T(); }
+
+/**
+ * @brief Destroys the objects in the range [__ptr, __ptr + __n).
+ * @param __ptr Pointer to the range of objects.
+ * @param __n   Number of objects to destroy.
+ */
+template <class T>
+requires (!std::is_trivially_destructible_v <T>)
+inline void destroy(T *__ptr, size_t __n)
+noexcept(std::is_nothrow_destructible_v <T>)
+{ while(__n--) destroy(__ptr++); }
+
+
+/* A simple allocator. */
 template <class T>
 struct allocator {
     inline static constexpr size_t __N = sizeof(T);
@@ -122,50 +199,10 @@ struct allocator {
     using const_pointer     = const T*;
     using const_reference   = const T&;
 
-    [[__gnu__::__always_inline__]] static T *allocate() {
-        return static_cast <T *> (dark::malloc(__N));
-    }
-    static T *allocate(size_t __n) {
-        return static_cast <T *> (malloc(__n * __N));
-    }
-    static void deallocate(T *__ptr) { dark::free(__ptr); }
-    static void deallocate(T *__ptr,size_t __n) { free(__ptr); }
+    static T *allocate(size_t __n) { return static_cast <T *> (::dark::malloc(__n * __N)); }
+    static void deallocate(T *__ptr, [[maybe_unused]] size_t __n) { ::dark::free(__ptr); }
 };
 
 
-template <class T>
-requires std::is_constructible_v <T>
-inline void construct(T *__ptr)
-noexcept(noexcept(::new (__ptr) T()))
-{ ::new(__ptr) T(); }
 
-
-template <class T>
-requires std::is_copy_constructible_v <T>
-inline void construct(T *__ptr, const T &__val)
-noexcept(noexcept(::new(__ptr) T(__val)))
-{ ::new(__ptr) T(__val); }
-
-
-template <class T>
-requires std::is_move_constructible_v <T>
-inline void construct(T *__ptr, T &&__val)
-noexcept(noexcept(::new(__ptr) T(std::move(__val))))
-{ ::new (__ptr) T(std::move(__val)); }
-
-
-template <class T,class ...Args>
-requires std::is_constructible_v <T, Args...>
-inline void construct_forward(T *__ptr, Args &&...__val)
-{ ::new (__ptr) T(std::forward <Args>(__val)...); }
-
-
-template <class T>
-requires std::is_trivially_destructible_v <T>
-inline void destroy(T *) noexcept {}
-
-template <class T>
-requires (!std::is_trivially_destructible_v <T>)
-inline void destroy(T *__ptr) noexcept { __ptr->~T(); }
-
-}
+} // namespace dark
