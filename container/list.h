@@ -45,8 +45,6 @@ struct list_traits {
     using node_base     = linked_node_base;
     using node_type     = linked_node <T>;
     using value_type    = T;
-    using reference     = T &;
-    using pointer       = T *;
     using T_Alloc       = __gnu_cxx::__alloc_traits<_Alloc_Type>::template rebind<T>::other;
     using _Alloc        = __gnu_cxx::__alloc_traits<T_Alloc>::template rebind<node_type>::other;
 
@@ -64,12 +62,14 @@ struct list : public list_base::list_traits <_Tp,_Alloc_Type> {
   public:
     using _Traits = typename list_base::list_traits <_Tp,_Alloc_Type>;
     using typename _Traits::value_type;
-    using typename _Traits::reference;
-    using typename _Traits::pointer;
-    using typename _Traits::iterator;
     using typename _Traits::const_iterator;
     using typename _Traits::reverse_iterator;
     using typename _Traits::const_reverse_iterator;
+
+    using pointer         = value_type *;
+    using reference       = value_type &;
+    using const_pointer   = const value_type *;
+    using const_reference = const value_type &;
 
   protected:
     using typename _Traits::node_base;
@@ -395,6 +395,12 @@ struct list : public list_base::list_traits <_Tp,_Alloc_Type> {
 
     const_reverse_iterator crbegin() const noexcept { return rbegin(); }
     const_reverse_iterator crend()   const noexcept { return rend();   }
+
+    reference front() noexcept { return *begin(); }
+    const_reference front() const noexcept { return *begin(); }
+
+    reference back() noexcept { return *rbegin(); }
+    const_reference back() const noexcept { return *rbegin(); }
 
   public:
     /* Some algorithms related functions. */
