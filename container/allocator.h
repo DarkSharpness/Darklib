@@ -66,7 +66,6 @@ class allocator_debug_helper {
     }
 };
 
-
 /* Debug allocator (It will leak only a size of 16 bytes). */
 class allocator_debugger {
   private:
@@ -86,7 +85,6 @@ class allocator_debugger {
     }
 };
 
-
 inline void *malloc(size_t __n) noexcept {
     static allocator_debugger __obj;
     return __obj.allocate(__n);
@@ -96,6 +94,42 @@ inline void free(void *__ptr) noexcept {
     static allocator_debugger __obj;
     return __obj.deallocate(__ptr);
 }
+
+/* A special class for debug use. */
+template <class _Tp>
+struct leaker {
+    _Tp *ptr;
+
+    leaker(_Tp x) {
+        ptr = (_Tp*) ::dark::malloc(sizeof(_Tp));
+        *ptr = x;
+    }
+
+    leaker(const leaker &__rhs) {
+        ptr = (_Tp*) ::dark::malloc(sizeof(_Tp));
+        *ptr = *__rhs.ptr;
+    }
+    leaker &operator = (const leaker &__rhs) {
+        *ptr = *__rhs.ptr;
+        return *this;
+    }
+
+    leaker(leaker &&__rhs) {
+        ptr = __rhs.ptr;
+        __rhs.ptr = nullptr;
+    }
+    leaker &operator = (leaker &&__rhs) {
+        ptr = __rhs.ptr;
+        __rhs.ptr = nullptr;
+        return *this;
+    }
+
+    ~leaker() { ::dark::free(ptr); }
+
+    bool operator == (const leaker &__rhs) const {
+        return (!ptr && !__rhs.ptr) || (*ptr == *__rhs.ptr);
+    }
+};
 
 #else
 
@@ -148,39 +182,59 @@ noexcept(noexcept(::new (__ptr) _Tp(std::forward <_Args>(__val)...)))
  * @brief Special version for trivially destructible type.
  * It can be used to avoid the overhead of calling destructor.
  */
-template <class T>
-requires std::is_trivially_destructible_v <T>
-inline void destroy(T *) noexcept {}
+template <class _Tp>
+requires std::is_trivially_destructible_v <_Tp>
+inline void destroy([[maybe_unused]] _Tp *) noexcept {}
 
 /**
  * @brief Special version for trivially destructible type.
  * It can be used to avoid the overhead of calling destructor.
  * It avoids a loop when the type is trivially destructible.
  */
-template <class T>
-requires std::is_trivially_destructible_v <T>
-inline void destroy(T *__ptr, [[maybe_unused]] size_t __n) noexcept {}
+template <class _Tp>
+requires std::is_trivially_destructible_v <_Tp>
+inline void destroy([[maybe_unused]] _Tp *, [[maybe_unused]] size_t) noexcept {}
+
+/**
+ * @brief Special version for trivially destructible type.
+ * It can be used to avoid the overhead of calling destructor.
+ * It avoids a loop when the type is trivially destructible.
+ */
+template <class _Tp>
+requires std::is_trivially_destructible_v <_Tp>
+inline void destroy([[maybe_unused]] _Tp *, [[maybe_unused]] _Tp *) noexcept {}
 
 /**
  * @brief Destory the object pointed by __ptr.
  * @param __ptr Pointer to the object. 
  */
-template <class T>
-requires (!std::is_trivially_destructible_v <T>)
-inline void destroy(T *__ptr)
-noexcept(std::is_nothrow_destructible_v <T>)
-{ __ptr->~T(); }
+template <class _Tp>
+requires (!std::is_trivially_destructible_v <_Tp>)
+inline void destroy(_Tp *__ptr)
+noexcept(std::is_nothrow_destructible_v <_Tp>)
+{ __ptr->~_Tp(); }
 
 /**
  * @brief Destroys the objects in the range [__ptr, __ptr + __n).
  * @param __ptr Pointer to the range of objects.
  * @param __n   Number of objects to destroy.
  */
-template <class T>
-requires (!std::is_trivially_destructible_v <T>)
-inline void destroy(T *__ptr, size_t __n)
-noexcept(std::is_nothrow_destructible_v <T>)
-{ while(__n--) destroy(__ptr++); }
+template <class _Tp>
+requires (!std::is_trivially_destructible_v <_Tp>)
+inline void destroy(_Tp *__ptr, size_t __n)
+noexcept(std::is_nothrow_destructible_v <_Tp>)
+{ while(__n--) (__ptr++)->~_Tp(); }
+
+/**
+ * @brief Destroys the objects in the range [__ptr, __ptr + __n).
+ * @param __ptr Pointer to the range of objects.
+ * @param __n   Number of objects to destroy.
+ */
+template <class _Tp>
+requires (!std::is_trivially_destructible_v <_Tp>)
+inline void destroy(_Tp *__beg, _Tp *__end)
+noexcept(std::is_nothrow_destructible_v <_Tp>)
+{ while(__beg != __end) (__beg++)->~_Tp(); }
 
 
 /* A simple allocator. */
@@ -200,7 +254,7 @@ struct allocator {
     using const_reference   = const T&;
 
     static T *allocate(size_t __n) { return static_cast <T *> (::dark::malloc(__n * __N)); }
-    static void deallocate(T *__ptr, [[maybe_unused]] size_t __n) { ::dark::free(__ptr); }
+    static void deallocate(T *__ptr, [[maybe_unused]] size_t __n) noexcept { ::dark::free(__ptr); }
 };
 
 
