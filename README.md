@@ -2,13 +2,12 @@
 
 NO WARRANTY! NO WARRANTY! NO WARRANTY!
 
-All library implements are based on g++ 13.1 on windows.
+All library implements are based on g++ 13.2 on my windows 11 OS.
 
-All library implements feature C++ 20 and later.
+All library implements supports C++ 20 and later. [Click here for more Details](docs/README.md)
 
 > C with classes is outdated. C with concepts is in trend ! (by [cqwrteur](https://www.zhihu.com/people/cqwrteur))
 
-(Don't take it too seriously. Just a joke~)
+(Don't take it too seriously. Just a joke from a joker ~)
 
-[Details](docs/README.md)
 
