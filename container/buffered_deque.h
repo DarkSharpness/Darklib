@@ -3,25 +3,30 @@
 #include "allocator.h"
 
 #include <cstring>
+#include <stddef.h>
 #include <concepts>
 #include <initializer_list>
 #include <ext/alloc_traits.h>
+#include <bits/stl_algobase.h>
+#include <bits/stl_uninitialized.h>
+
 
 namespace dark {
 
 
+
 namespace buffered_deque_base {
 
-
-// template <class _Tp, size_t _Nm,bool _Dir>
 
 template <class _Tp,size_t _Nm,bool _Const,bool _Dir>
 struct iterator {
   protected:
     using node_type         = std::conditional_t <_Const, const _Tp, _Tp>;
     using _Np               = node_type;
-
   public:
+    using mutable_iterator  = iterator <_Tp,_Nm,false,_Dir>;
+    using reverse_iterator  = iterator <_Tp,_Nm,_Const,!_Dir>;
+
     using iterator_category = std::random_access_iterator_tag;
     using value_type        = node_type;
     using difference_type   = std::ptrdiff_t;
@@ -33,11 +38,11 @@ struct iterator {
     _Np * buf_node; /* First node of the buffer.    */
     _Tp **map_node; /* Current position in the map. */
 
-  protected:
-    /* Some helper functions. */
-
     /* Offset to the front of the buffer. */
     inline difference_type get_offset() const noexcept { return cur_node - buf_node; }
+
+  protected:
+    /* Some helper functions. */
 
     /* Move the pointer forward or backward. */
     template <bool _Real>
@@ -88,7 +93,7 @@ struct iterator {
      * Of course, the reverse is not allowed.
      */
     template <void * = nullptr> requires (_Const == true)
-    iterator(const iterator <_Tp,_Nm,false,_Dir> & __rhs)
+    iterator(const mutable_iterator & __rhs)
     noexcept : iterator(__rhs.cur_node, __rhs.buf_node,__rhs.map_node) {}
 
     iterator(const iterator &) noexcept = default;
@@ -141,10 +146,23 @@ struct iterator {
     }
 
     /**
-     * @return Return the reverse iterator pointing to the same data.
+     * @return Reverse iterator pointing to the same data.
      */
-    iterator <_Tp,_Nm,_Const,!_Dir> reverse() const noexcept {
+    reverse_iterator reverse() const noexcept {
         return iterator <_Tp,_Nm,_Const,!_Dir> { cur_node, buf_node, map_node };
+    }
+
+    /**
+     * @return Non-const iterator pointing to the same data.
+     * @attention Be aware of what you are doing before abusing this function.
+     */
+    template <void * = nullptr> requires (_Const == true)
+    mutable_iterator remove_const() const noexcept {
+        return mutable_iterator {
+            const_cast <_Tp *>  (cur_node),
+            const_cast <_Tp *>  (buf_node),
+            const_cast <_Tp **> (map_node)
+        };
     }
 
   public:
@@ -202,9 +220,6 @@ struct deque_traits {
     using const_iterator            = buffered_deque_base::iterator <_Tp,_Nm,true,true>;
     using reverse_iterator          = buffered_deque_base::iterator <_Tp,_Nm,false,false>;
     using const_reverse_iterator    = buffered_deque_base::iterator <_Tp,_Nm,true,false>;
-
-    [[no_unique_address]] _Buf_Alloc buf_alloc;
-    [[no_unique_address]] _Map_Alloc map_alloc;
 };
 
 
@@ -224,6 +239,7 @@ inline consteval size_t deque_buffer_size(size_t size) {
     }
 }
 
+
 /**
  * @brief A buffered deque similar to std::deque.
  * Elements are stored in the buffer array.
@@ -232,6 +248,20 @@ inline consteval size_t deque_buffer_size(size_t size) {
  * It's special that users can customize the buffer size.
  * In addition, its iterator has less space occupation.
  * It only requires 3 necessary pointers to maintain.
+ * 
+ * @attention Right value operations on the deque are special.
+ * To ensure noexcept right value operations, the right value
+ * deque will be set in a destruction-only state.
+ * In other words, any operation on a moved-from deque is UB,
+ * except for the destructor which will be naturally called.
+ * 
+ * In fact, destructor on moved_away containers will do nothing,
+ * so it's safe to call it multiple times (even 0 times).
+ * 
+ * However, if you still wants to use the moved-from deque,
+ * call reset() function to reset it to a valid state.
+ * Nevertheless, we recommend you to avoid this situation
+ * by calling swap instead of move assignment/constructor.
  * 
  */
 template <
@@ -255,6 +285,8 @@ struct buffered_deque : public buffered_deque_base::deque_traits <_Tp,_Alloc_Typ
     using const_reference   = const value_type &;
 
   protected:
+    inline static constexpr size_t _S_init_map_size = 8;
+
     using typename _Traits::_Buf_Pointer;
     using typename _Traits::_Map_Pointer;
     using typename _Traits::_Buf_Alloc;
@@ -276,17 +308,24 @@ struct buffered_deque : public buffered_deque_base::deque_traits <_Tp,_Alloc_Typ
      * @param __last  Iterator pointing to one past the last.
      * @attention No buffer is touched. Only elements are destroyed.
      */
-    void destroy_data(iterator __first,iterator __last) {
+    template <void * = nullptr>
+    requires (!std::is_trivially_destructible_v <_Tp>)
+    void destroy_data(const iterator &__first,const iterator &__last) {
         if (__first.map_node == __last.map_node) {
             dark::destroy(__first.cur_node,__last.cur_node);
         } else {
             dark::destroy(__first.cur_node,__first.buf_node + _Nm);
             dark::destroy(__last.buf_node,__last.cur_node);
             for(_Map_Pointer __beg = __first.map_node + 1; 
-                __beg != __last.map_node; ++__beg)
+                __beg != __last.map_node ; ++__beg)
                dark::destroy(*__beg, _Nm);
         }
     }
+
+    template <void * = nullptr>
+    requires (std::is_trivially_destructible_v <_Tp>)
+    void destroy_data(const iterator &,const iterator &) noexcept {}
+
 
     /* Deallocate the buffer in a range. */
     void deallocate_buffer(_Map_Pointer __beg, _Map_Pointer __end) {
@@ -298,10 +337,13 @@ struct buffered_deque : public buffered_deque_base::deque_traits <_Tp,_Alloc_Typ
         map_alloc.deallocate(map_head,map_size);        
     }
 
-    /* Inner initialization that init the  */
-    void initialize_map(size_t __node_size) {
-        const size_t __min_size = __node_size / _Nm + 1;
-        map_size = __min_size + 2 > 8 ? __min_size + 2 : 8;
+    /**
+     * @brief Fill the inner map with given buffers.
+     * It will set the head and tail pointers to where they should be.
+     * @param __min_size The minimum size of the buffer.
+     */
+    void initialize_map_buffer(size_t __min_size) {
+        map_size = std::max(__min_size + 2,_S_init_map_size);
         map_head = map_alloc.allocate(map_size);
 
         /**
@@ -310,13 +352,26 @@ struct buffered_deque : public buffered_deque_base::deque_traits <_Tp,_Alloc_Typ
          */
 
         _Map_Pointer __head = map_head + (map_size - __min_size) / 2;
-        _Map_Pointer __tail = __head + __min_size;
+        _Map_Pointer __tail =  __head  + __min_size;
 
         /* After loop, __tail = __head - 1. */
         while(__tail-- != __head) *__tail = buf_alloc.allocate(_Nm);
 
         head.buf_node = *(head.map_node = __head);
         tail.buf_node = *(tail.map_node = __tail + __min_size);
+    }
+
+    /**
+     * @brief Inner initialization that fill the map
+     * with given enougth node capacity and buffers.
+     *  
+     * It will allocate the buffers required and set the
+     * head and tail pointers to where they should be.
+     * 
+     * @param __node_size Count of elements to be reserved.
+     */
+    void initialize_map(size_t __node_size) {
+        initialize_map_buffer(__node_size / _Nm + 1);
 
         const size_t __mod    = __node_size % _Nm;
         const size_t __offset = (_Nm - __mod) / 2;
@@ -386,13 +441,126 @@ struct buffered_deque : public buffered_deque_base::deque_traits <_Tp,_Alloc_Typ
         return __retval;
     }
 
+    template <class _Iter>
+    requires std::__is_random_access_iter <_Iter>::value
+    void naive_assign(_Iter __first,_Iter __last) {
+        const difference_type __old_size = size();
+        if (__old_size > __last - __first) {
+            erase_back(std::copy(__first,__last,begin()));
+        } else {
+            _Iter __mid = __first + __old_size;
+            std::copy(__first,__mid,begin());
+            insert_back(__mid,__last);
+        }
+    }
+
+    template <class _Iter>
+    requires (!std::__is_random_access_iter <_Iter>::value)
+    void naive_assign(_Iter __first,_Iter __last) {
+        iterator __cur = begin();
+        for (; __cur != end() && __first != __last ;
+                (void)++__cur, ++__first) *__cur = *__first;
+
+        if (__first == __last) {
+            if (__cur != end()) erase_back(__cur);
+        } else {
+            insert_back(__first,__last);
+        }
+    }
+
   public:
     /* Construct from nothing. */
-    buffered_deque() noexcept : buf_alloc(), map_alloc() {
-        initialize_map(0);
+    buffered_deque() { initialize_map(0); }
+
+    /**
+     * @brief Copy constructor.
+     * @param __rhs Data source.
+     * @note O(n) complexity. (O(n) element copy constructions)
+     */
+    buffered_deque(const buffered_deque &__rhs) {
+        initialize_map_buffer(__rhs.allocated_buffer_size());
+        head.cur_node = head.buf_node + __rhs.head.get_offset();
+        tail.cur_node = tail.buf_node + __rhs.tail.get_offset();
+        if (head.buf_node == tail.buf_node) {
+            std::uninitialized_copy
+                (__rhs.head.cur_node, __rhs.tail.cur_node, head.cur_node);
+        } else {
+            std::uninitialized_copy
+                (__rhs.head.cur_node, __rhs.head.buf_node + _Nm, head.cur_node);
+            std::uninitialized_copy
+                (__rhs.tail.buf_node, __rhs.tail.cur_node,       tail.buf_node);
+
+            for(_Map_Pointer __beg = __rhs.head.map_node + 1,
+                             __cur = head.map_node;
+                __beg != __rhs.tail.map_node ; ++__beg)
+               std::uninitialized_copy(*__beg, *__beg + _Nm, *(++__cur));
+        }
+    }
+
+    /**
+     * @brief Move constructor.
+     * @param __rhs Data source. It will be no longer valid after move.
+     * @attention Users should never touch rhs after move.
+     * It will be no longer valid (except for destruction).
+     * Do not attempt to use it any more or errors will occur!
+     * @note O(1) complexity. (O(1) basic operations.)
+     */
+    buffered_deque(buffered_deque &&__rhs) noexcept {
+        if constexpr (std::is_standard_layout_v <buffered_deque>) {
+            constexpr size_t __off = offsetof(buffered_deque,map_head);
+            constexpr size_t __len = sizeof(buffered_deque) - __off;
+            char *__beg = (char *)(&__rhs) + __off;
+            std::memcpy(&map_head,__beg,__len);
+        } else {
+            map_head = __rhs.map_head;
+            map_size = __rhs.map_size;
+            head     = __rhs.head;
+            tail     = __rhs.tail;
+        }
+        __rhs.map_head = nullptr;
+    }
+
+    /**
+     * @brief Copy assignment.
+     * @param __rhs Data source.
+     * @note O(n) complexity. (n element copy constructions)
+     */
+    buffered_deque &operator = (const buffered_deque &__rhs) {
+        if (std::addressof (__rhs) != this) {
+            /* Short case. */
+            naive_assign(__rhs.begin(),__rhs.end());
+        } return *this;
+    }
+
+    /**
+     * @brief Move assignment.
+     * @param __rhs Data source. It will be no longer valid after move.
+     * @attention Users should never touch rhs after move.
+     * It will be no longer valid (except for destruction).
+     * Do not attempt to use it any more or errors will occur!
+     * @note O(n) complexity. (O(n) destructions operations.)
+     */
+    buffered_deque &operator = (buffered_deque &&__rhs) noexcept {
+        if (std::addressof (__rhs) != this) {
+            this->~buffered_deque();
+            dark::construct(this,std::move(__rhs));
+        } return *this;
+    }
+
+    /**
+     * @brief  Reset the deque if it is in a invalid state.
+     * @return Whether the deque is reset (a.k.a whether invalid.)
+     */
+    bool reset() {
+        if (is_valid()) {
+            return false;
+        } else {
+            return (void) initialize_map(0), true;
+        }
     }
 
     ~buffered_deque() noexcept {
+        if (!map_head) return;
         destroy_data(head,tail);
         deallocate_buffer(head.map_node,tail.map_node + 1);
         deallocate_map();
@@ -449,6 +617,90 @@ struct buffered_deque : public buffered_deque_base::deque_traits <_Tp,_Alloc_Typ
     }
 
     /**
+     * @brief Erase from a position to the end.
+     * @param __pos Position to erase from.
+     * @attention Current position will be invalid after erase.
+     * @note O(n) complexity. (n element destructions)
+     */
+    iterator erase_back(const_iterator __pos) noexcept {
+        destroy_data(__pos.remove_const(), tail);
+        deallocate_buffer(__pos.map_node + 1, tail.map_node + 1);
+        return tail = __pos.remove_const();
+    }
+
+    /**
+     * @brief Erase from a position to the front.
+     * @param __pos Position to erase from.
+     * @attention Current position is still valid after erase.
+     * @note O(n) complexity. (n element destructions)
+     */
+    iterator erase_front(const_iterator __pos) noexcept {
+        destroy_data(head, __pos.remove_const());
+        deallocate_buffer(head.map_node, __pos.map_node);
+        return head = __pos.remove_const();
+    }
+
+    /**
+     * @brief Erase all elements in the deque.
+     * @attention All iterators will be invalid after erase.
+     * @note O(n) complexity. (n element destructions)
+     */
+    void clear() noexcept {
+        destroy_data(head,tail);
+        deallocate_buffer(head.map_node,tail.map_node);
+        tail.cur_node = tail.buf_node + _Nm / 2;
+        head = tail;
+    }
+
+    /**
+     * @brief Insert a range to the back.
+     * @param __first First iterator of the range.
+     * @param __last  One past the last iterator of the range.
+     */
+    template <class _Iter>
+    requires type_iterator <_Tp,_Iter>
+    void insert_back(_Iter __first,_Iter __last) {
+        const difference_type __dist  = std::distance(__first,__last);
+        const difference_type __delta = __dist - (_Nm - tail.get_offset());
+        if (__delta < 0) {
+            std::uninitialized_copy(__first,__last,tail.cur_node);
+            tail.cur_node += __dist;
+        } else {
+            const auto __added = __delta / _Nm + 1;
+            reallocate_map(__added,true);
+            for (size_t __i = 1; __i <= __added ; ++__i)
+                tail.map_node[__i] = buf_alloc.allocate(_Nm);
+            tail = std::uninitialized_copy(__first,__last,tail);
+        }
+    }
+
+    /**
+     * @brief Insert a range to the front.
+     * @param __first First iterator of the range.
+     * @param __last  One past the last iterator of the range.
+     */
+    template <class _Iter>
+    requires type_iterator <_Tp,_Iter>
+    void insert_front(_Iter __first,_Iter __last) {
+        const difference_type __dist  = std::distance(__first,__last);
+        const difference_type __delta = __dist - head.get_offset();
+        if (__delta <= 0) {
+            head.cur_node -= __dist;
+            std::uninitialized_copy(__first,__last,head.cur_node);
+        } else {
+            const auto __added = (__delta + (_Nm - 1)) / _Nm;
+            reallocate_map(__added,false);
+            for (size_t __i = 0; __i < __added ; ++__i)
+                *(--head.map_node) = buf_alloc.allocate(_Nm);
+            head.buf_node = *(head.map_node);
+            head.cur_node = head.buf_node + (__added * _Nm - __delta);
+            std::uninitialized_copy(__first,__last,head);
+        }
+    }
+
+  public:
+
+    /**
      * @return Count of buffers being used.
      * @attention Even if the deque is empty, it will
      * still occupy one buffer. (a.k.a %retval >= 1)
@@ -479,6 +731,11 @@ struct buffered_deque : public buffered_deque_base::deque_traits <_Tp,_Alloc_Typ
      * @note (a.k.a inner length of one buffer array).
      */
     consteval size_t buffer_size() const noexcept { return _Nm; }
+    /**
+     * @return Whether the deque is valid (a.k.a not moved-from) 
+     */
+    bool is_valid() const noexcept { return map_head != nullptr; }
+
 
     iterator begin() noexcept { return head; }
     iterator end()   noexcept { return tail; }
@@ -507,8 +764,6 @@ struct buffered_deque : public buffered_deque_base::deque_traits <_Tp,_Alloc_Typ
     reference operator [](size_t __pos) noexcept { return *(head + __pos); }
     const_reference operator [](size_t __pos) const noexcept { return *(head + __pos); }
 };
-
-
 
 
 
