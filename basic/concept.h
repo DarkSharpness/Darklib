@@ -1,9 +1,11 @@
+#pragma once
+
 #include <concepts>
 
 namespace dark {
 
 template <class __Iter>
-concept valid_iterator = requires (__Iter __it) {
+concept valid_iterator = std::is_pointer_v <__Iter> ||  requires (__Iter __it) {
     typename __Iter::value_type;
     typename __Iter::reference;
     typename __Iter::pointer;
@@ -19,8 +21,14 @@ concept valid_iterator = requires (__Iter __it) {
 
 template <class _Tp,class __Iter>
 concept type_iterator = 
-    valid_iterator <__Iter> 
-&&  std::convertible_to <std::decay_t <_Tp>, typename __Iter::value_type>;
+    valid_iterator <__Iter>
+&&  requires (__Iter __it) {
+    typename std::enable_if_t <
+        std::is_constructible_v <
+            std::decay_t <_Tp>, decltype (*__it)
+        >,void *>;
+};
+
 
 
 
