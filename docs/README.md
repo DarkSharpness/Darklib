@@ -2,18 +2,14 @@
 
 - list (sized)
   - assign
-  - splice
+  - splice (from another raw/sized list)
   - sort
 
-
-- buffered_deque
-  - copy/move ctor/assign
-  - erase_to_front/end
-  - append_front/end
+- buffered_deque (custom buffered)
   - swap
   - resize_front/end
 
-- bitset
+- bitset (custom aligned)
 
 - dynamic_bitset
 
