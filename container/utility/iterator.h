@@ -1,5 +1,7 @@
 #pragma once
 
+#include "common.h"
+
 #include <version>
 #include <iterator>
 #include <concepts>
@@ -100,6 +102,9 @@ struct basic_iterator {
     _Data_Type *node;
 
   public:
+    using mutable_iterator  = basic_iterator <_Traits,false,_Dir>;
+    using reverse_iterator  = basic_iterator <_Traits,_Const,!_Dir>;
+
     using iterator_category = typename _Traits::iterator_category;
     using difference_type   = typename _Traits::difference_type;
     using compare_type      = typename _Traits::compare_type;
@@ -123,9 +128,8 @@ struct basic_iterator {
      * @brief Construct from an non_const_iterator to a const_iterator.
      * Of course, the reverse is not allowed.
      */
-    template <void * = nullptr>
-    requires (_Const == true)
-    basic_iterator(basic_iterator <_Traits,false,_Dir> __rhs)
+    template <void * = nullptr> requires (_Const == true)
+    basic_iterator(mutable_iterator __rhs)
     noexcept : node(__rhs.base()) {}
 
     basic_iterator(const basic_iterator &) noexcept = default;
@@ -196,15 +200,24 @@ struct basic_iterator {
     }
 
     /**
-     * @return Return the inner data pointer.
+     * @return Inner data pointer.
      */
     _Data_Type *base() const noexcept { return node; }
 
     /**
-     * @return Return the reverse iterator pointing to the same data.
+     * @return Reverse iterator pointing to the same data.
      */
-    basic_iterator <_Traits,_Const,!_Dir> reverse() const noexcept {
-        return basic_iterator <_Traits,_Const,!_Dir> { node };
+    reverse_iterator reverse() const noexcept {
+        return reverse_iterator { node };
+    }
+
+    /**
+     * @return Non-const iterator pointing to the same data.
+     * @attention Be aware of what you are doing before abusing this function.
+     */
+    template <void * = nullptr> requires (_Const == true)
+    mutable_iterator remove_const() const noexcept {
+        return mutable_iterator { const_cast <_Node_Type *> (node) };
     }
 
   public:
@@ -258,7 +271,6 @@ struct basic_iterator {
     }
 
 };
-
 
 
 /**
