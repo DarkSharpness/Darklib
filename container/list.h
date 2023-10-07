@@ -62,6 +62,7 @@ struct list : public list_base::list_traits <_Tp,_Alloc_Type> {
   public:
     using _Traits = typename list_base::list_traits <_Tp,_Alloc_Type>;
     using typename _Traits::value_type;
+    using typename _Traits::iterator;
     using typename _Traits::const_iterator;
     using typename _Traits::reverse_iterator;
     using typename _Traits::const_reverse_iterator;
@@ -85,10 +86,10 @@ struct list : public list_base::list_traits <_Tp,_Alloc_Type> {
     void remove_data() noexcept {
         auto *__ptr = static_cast <node_type *> (header.next);
         while (__ptr != static_cast <node_base *> (&header)) {
-            auto *__tmp = __ptr->next;
-            ::dark::destroy(__ptr);
-            alloc.deallocate(__ptr,1);
-            __ptr = static_cast <node_type *> (__tmp);
+            auto *__tmp = __ptr;
+            __ptr = static_cast <node_type *> (__ptr->next);
+            ::dark::destroy(__tmp);
+            alloc.deallocate(__tmp,1);
         }
     }
 
@@ -137,8 +138,7 @@ struct list : public list_base::list_traits <_Tp,_Alloc_Type> {
 
     list &operator = (const list &rhs) {
         if(this != &rhs) {
-            remove_data();
-            ::dark::construct(this,rhs);
+            assign(rhs.begin(),rhs.end());
         } return *this;
     }
 
@@ -147,6 +147,11 @@ struct list : public list_base::list_traits <_Tp,_Alloc_Type> {
             remove_data();
             ::dark::construct(this,std::move(rhs));
         } return *this;
+    }
+
+    list &operator = (std::initializer_list <_Tp> __list) {
+        assign(__list.begin(),__list.end());
+        return *this;
     }
 
     /**
@@ -168,7 +173,7 @@ struct list : public list_base::list_traits <_Tp,_Alloc_Type> {
      * @brief Push one element to the front of the list.
      * @param __val The value to be inserted.
      * @attention No iterators or references are invalidated.
-     * @note O(1) complexity (1 element copy constructor).
+     * @note O(1) complexity. (1 element copy construction)
      */
     void push_front(const _Tp &__val) {
         node_type *__node = alloc.allocate(1);
@@ -180,7 +185,7 @@ struct list : public list_base::list_traits <_Tp,_Alloc_Type> {
      * @brief Push one element to the front of the list.
      * @param __val The value to be inserted.
      * @attention No iterators or references are invalidated.
-     * @note O(1) complexity (1 element move constructor).
+     * @note O(1) complexity. (1 element move construction)
      */
     void push_front(_Tp &&__val) {
         node_type *__node = alloc.allocate(1);
@@ -193,7 +198,7 @@ struct list : public list_base::list_traits <_Tp,_Alloc_Type> {
      * @param __args The arguments to be passed to the constructor.
      * @return Reference to the constructed element.
      * @attention No iterators or references are invalidated.
-     * @note O(1) complexity (1 element custom constructor).
+     * @note O(1) complexity. (1 element custom construction)
      */
     template <class ...Args>
     requires std::constructible_from <_Tp,Args...>
@@ -208,7 +213,7 @@ struct list : public list_base::list_traits <_Tp,_Alloc_Type> {
      * @brief Push one element to the back of the list.
      * @param __val The value to be inserted.
      * @attention No iterators or references are invalidated.
-     * @note O(1) complexity (1 element copy constructor).
+     * @note O(1) complexity. (1 element copy construction)
      */
     void push_back(const _Tp &__val) {
         node_type *__node = alloc.allocate(1);
@@ -220,7 +225,7 @@ struct list : public list_base::list_traits <_Tp,_Alloc_Type> {
      * @brief Push one element to the back of the list.
      * @param __val The value to be inserted.
      * @attention No iterators or references are invalidated.
-     * @note O(1) complexity (1 element move constructor).
+     * @note O(1) complexity. (1 element move construction)
      */
     void push_back(_Tp &&__val) {
         node_type *__node = alloc.allocate(1);
@@ -233,7 +238,7 @@ struct list : public list_base::list_traits <_Tp,_Alloc_Type> {
      * @param __args The arguments to be passed to the constructor.
      * @return Reference to the constructed element.
      * @attention No iterators or references are invalidated.
-     * @note O(1) complexity (1 element custom constructor).
+     * @note O(1) complexity. (1 element custom construction)
      */
     template <class ...Args>
     requires std::constructible_from <_Tp,Args...>
@@ -249,12 +254,12 @@ struct list : public list_base::list_traits <_Tp,_Alloc_Type> {
      * @param __pos Iterator to the position before which the element will be inserted.
      * @param __val The value to be inserted.
      * @attention No iterators or references are invalidated.
-     * @note O(1) complexity (1 element copy constructor).
+     * @note O(1) complexity. (1 element copy construction)
      */
     void insert(const_iterator __pos,const _Tp &__val) {
         node_type *__node = alloc.allocate(1);
         ::dark::construct(__node, __val);
-        node_base *__ptr = const_cast <node_base *> (__pos.base());
+        node_base *__ptr = __pos.remove_const().base();
         list_base::insert(&header,__ptr,__node);
     }
 
@@ -263,13 +268,65 @@ struct list : public list_base::list_traits <_Tp,_Alloc_Type> {
      * @param __pos Iterator to the position before which the element will be inserted.
      * @param __val The value to be inserted.
      * @attention No iterators or references are invalidated.
-     * @note O(1) complexity (1 element move constructor).
+     * @note O(1) complexity. (1 element move construction)
      */
     void insert(const_iterator __pos,_Tp &&__val) {
         node_type *__node = alloc.allocate(1);
         ::dark::construct(__node, std::move(__val));
-        node_base *__ptr = const_cast <node_base *> (__pos.base());
+        node_base *__ptr = __pos.remove_const().base();
         list_base::insert(&header,__ptr,__node);
+    }
+
+    iterator insert(const_iterator __pos,size_t __count, const _Tp &__val) noexcept {
+        if (__count == 0) return __pos.remove_const();
+
+        header.data += __count;
+        auto *__next = __pos.remove_const().base();
+        auto *__temp = __next->prev;
+
+        do {
+            auto *__node = alloc.allocate(1);
+            ::dark::construct(__node, __val);
+            __node->prev = __temp;
+            __temp->next = __node;
+            __temp = __node;
+        } while (--__count != 0);
+
+        auto *__prev = __next->prev;
+        __temp->next = __next;
+        __next->prev = __temp;
+
+        return iterator {__prev->next};
+    }
+
+    template <class __Iter>
+    requires type_iterator <_Tp,__Iter>
+    iterator insert(const_iterator __pos,__Iter __first,__Iter __last) noexcept {
+        if (__first == __last) return __pos.remove_const();
+        constexpr bool __is_random_access = std::__is_random_access_iter <__Iter>::value;
+        if constexpr (__is_random_access) { header.data += (__last - __first); }
+
+        auto *__next = __pos.remove_const().base();
+        auto *__temp = __next->prev;
+
+        do {
+            if constexpr (!__is_random_access) { ++header.data; }
+            auto *__node = alloc.allocate(1);
+            ::dark::construct(__node, *(__first++));
+            __node->prev = __temp;
+            __temp->next = __node;
+            __temp = __node;
+        } while (__first != __last);
+
+        auto *__prev = __next->prev;
+        __temp->next = __next;
+        __next->prev = __temp;
+
+        return iterator {__prev->next};
+    }
+
+    iterator insert(const_iterator __pos,std::initializer_list <_Tp> __list) noexcept {
+        return insert(__pos,__list.begin(),__list.end());
     }
 
     /**
@@ -278,23 +335,23 @@ struct list : public list_base::list_traits <_Tp,_Alloc_Type> {
      * @param __args The arguments to be passed to the constructor. 
      * @return Reference to the constructed element.
      * @attention No iterators or references are invalidated.
-     * @note O(1) complexity (1 element custom constructor).
+     * @note O(1) complexity. (1 element custom construction)
      */
     template <class ...Args>
     requires std::constructible_from <_Tp,Args...>
-    reference emplace(const_iterator __pos,Args &&...__args) {
+    iterator emplace(const_iterator __pos,Args &&...__args) {
         node_type *__node = alloc.allocate(1);
         ::dark::construct(__node, std::forward <Args> (__args)...);
-        node_base *__ptr = const_cast <node_base *> (__pos.base());
+        node_base *__ptr = __pos.remove_const().base();
         list_base::insert(&header,__ptr,__node);
-        return __node->data;
+        return iterator {__node};
     }
 
     /**
      * @brief Pop one element from the front of the list.
      * @attention No iterators or references are invalidated.
      * Only those erased elements are invalidated (of course).
-     * @note O(1) complexity (1 element destructor).
+     * @note O(1) complexity. (1 element destruction)
      */
     void pop_front() noexcept {
         auto *__ptr = static_cast <node_type *> (list_base::pop_front(&header));
@@ -306,7 +363,7 @@ struct list : public list_base::list_traits <_Tp,_Alloc_Type> {
      * @brief Pop one element from the back of the list.
      * @attention No iterators or references are invalidated.
      * Only those erased elements are invalidated (of course).
-     * @note O(1) complexity (1 element destructor).
+     * @note O(1) complexity. (1 element destruction)
      */
     void pop_back() noexcept {
         auto *__ptr = static_cast <node_type *> (list_base::pop_back(&header));
@@ -316,7 +373,7 @@ struct list : public list_base::list_traits <_Tp,_Alloc_Type> {
 
     /**
      * @brief Clear the list.
-     * @note O(n) complexity (n element destructors).
+     * @note O(n) complexity. (n element destructions)
      */
     void clear() noexcept { remove_data(); ::dark::construct(this); }
 
@@ -326,10 +383,10 @@ struct list : public list_base::list_traits <_Tp,_Alloc_Type> {
      * @return Iterator to the next element.
      * @attention No iterators or references are invalidated.
      * Only those erased elements are invalidated (of course).
-     * @note O(1) complexity (1 element destructor).
+     * @note O(1) complexity. (1 element destruction)
      */
     iterator erase(const_iterator __pos) noexcept {
-        auto *__loc = const_cast <node_base *> (__pos.base());
+        auto *__loc = __pos.remove_const().base();
         auto *__tmp = __loc->next;
         auto *__ptr = static_cast <node_type *> (list_base::erase(&header,__loc));
         ::dark::destroy(__ptr);
@@ -344,19 +401,60 @@ struct list : public list_base::list_traits <_Tp,_Alloc_Type> {
      * @return Iterator to one past the last element erased.
      * @attention No iterators or references are invalidated.
      * Only those erased elements are invalidated (of course).
-     * @note O(n) complexity (n element destructors).
+     * @note O(n) complexity. (n element destructions)
      */
     iterator erase(const_iterator __first,const_iterator __last) noexcept {
-        auto *__beg = const_cast <node_base *> (__first.base());
-        auto *__end = const_cast <node_base *> (__last.base());
-        while (__beg != __end) {
-            auto *__ptr = static_cast <node_type *> (list_base::erase(&header,__beg));
-            __beg = __beg->next;
-            ::dark::destroy(__ptr);
-            alloc.deallocate(__ptr,1);
-        } return iterator(__end);
+        if (__first == __last) return __first.remove_const();
+
+        constexpr bool __is_random_access = std::__is_random_access_iter <const_iterator>::value;
+        if constexpr (__is_random_access) { header.data -= (__last - __first); }
+        
+        auto *__beg = static_cast <node_type *> (__first.remove_const().base());
+        auto *__end = static_cast <node_type *> (__last.remove_const().base());
+
+        __end->prev = __beg->prev;
+        __beg->prev->next = __end;
+
+        do {
+            if constexpr (!__is_random_access) { --header.data; }
+            auto *__tmp = __beg;
+            __beg = static_cast <node_type *> (__beg->next);
+            ::dark::destroy(__tmp);
+            alloc.deallocate(__tmp,1);
+        } while(__beg != __end);
+
+        return iterator(__end);
     }
 
+    void assign(size_t __count,const _Tp &__val) {
+        if (__count == 0) return clear();
+        if (__count < size()) {
+            auto __cur = begin();
+            while (__count--) *(__cur++) = __val;
+            erase(__cur,end());
+        } else {
+            for(auto &&__old : *this) __old = __val;
+            insert(end(),__count - size(),__val);
+        }
+    }
+
+    template <class _Iter>
+    requires type_iterator <_Tp,_Iter>
+    void assign(_Iter __first,_Iter __last) {
+        if (__first == __last) return clear();
+        auto __cur = begin();
+        do {
+            if (__cur == end()) return (void)insert(end(),__first,__last);
+            *(__cur++) = *(__first++);
+        } while (__first != __last);
+        erase(__cur,end());
+    }
+
+    void assign(std::initializer_list <_Tp> __list) {
+        assign(__list.begin(),__list.end());
+    }
+
+  public:
     /**
      * @return Return the size of the list in constant time.
      */
@@ -409,7 +507,7 @@ struct list : public list_base::list_traits <_Tp,_Alloc_Type> {
      * @brief  Reverse the order of elements in the list.
      * @return Reference to current list.
      * @attention No iterators or references are invalidated.
-     * @note O(n) complexity (n pointer swaps).
+     * @note O(n) complexity. (n pointer swaps)
      * No operation are performed on the elements themselves.
      */
     void reverse() noexcept {
@@ -426,7 +524,7 @@ struct list : public list_base::list_traits <_Tp,_Alloc_Type> {
      * @return Count of removed elements.
      * @attention No iterators or references are invalidated.
      * Only those erased elements are invalidated (of course).
-     * @note O(n) complexity (n element destructors).
+     * @note O(n) complexity. (n element destructions)
      */
     size_t unique() {
         static_assert (requires (_Tp __val) { __val == __val; },
@@ -442,7 +540,7 @@ struct list : public list_base::list_traits <_Tp,_Alloc_Type> {
      * @return Count of removed elements.
      * @attention No iterators or references are invalidated.
      * Only those erased elements are invalidated (of course).
-     * @note O(n) complexity (m (m < n) element destructors + n pointer operation).
+     * @note O(n) complexity. (m (m < n) element destructions + n pointer operation)
      */
     template <class _Equal>
     size_t unique(_Equal &&__eq) {
@@ -455,7 +553,7 @@ struct list : public list_base::list_traits <_Tp,_Alloc_Type> {
 
         while (++__ptr != __end) {
             if (__eq(*__ptr,*__cur)) {
-                auto *__del = static_cast <node_type *> 
+                auto *__del = static_cast <node_type *>
                     ( list_base::erase(&header, __ptr.base()) );
                 __del->prev = __pool.prev;
                 __pool.prev = __del;
