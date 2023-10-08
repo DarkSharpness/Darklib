@@ -9,7 +9,13 @@
   - swap
   - resize_front/end
 
-- bitset (custom aligned)
+- bitset
+  - set_range
+  - reset_range
+  - count_range
+  - flip_range
+  - (r)find_first(0/1)
+  - (r)find_next(0/1)
 
 - dynamic_bitset
 
