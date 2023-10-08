@@ -1,5 +1,6 @@
 #pragma once
 
+#include <bit>
 #include <concepts>
 
 namespace dark {
@@ -28,6 +29,16 @@ concept type_iterator =
             std::decay_t <_Tp>, decltype (*__it)
         >,void *>;
 };
+
+consteval bool is_little_endian() noexcept {
+    return std::endian::native == std::endian::little;
+}
+
+consteval bool is_big_endian() noexcept {
+    return std::endian::native == std::endian::big;
+}
+
+
 
 
 
