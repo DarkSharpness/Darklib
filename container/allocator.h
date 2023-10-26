@@ -11,7 +11,6 @@ namespace dark {
 
 
 #ifdef _DARK_DEBUG
-
 class allocator_debugger;
 
 class allocator_debug_helper {
@@ -26,29 +25,55 @@ class allocator_debug_helper {
     size_t refer_count = 0;
     size_t alloc_count = 0;
     size_t freed_count = 0;
+    size_t alloc_times = 0;
+    size_t freed_times = 0;    
 
     inline static allocator_debug_helper *single = nullptr;
     inline static constexpr size_t offset = sizeof(debug_pack);
 
     allocator_debug_helper() = delete;
     allocator_debug_helper(std::nullptr_t) noexcept {
-        std::cerr << "\033[32mDebug allocator is enabled!\n\033[0m";
+        normal("Debug allocator is enabled!");
+    }
+
+    static size_t pack_length(size_t __n) noexcept {
+        return (__n + (offset - 1)) / offset + 2;
+    }
+
+    /* Aligned to offset. */
+    static size_t real_size(size_t __n) noexcept {
+        return pack_length(__n) * offset;
     }
 
     void *allocate(void *__ptr,size_t __n) {
-        if(!__ptr) return nullptr;
+        if(!__ptr) throw std::bad_alloc {};
+
+        alloc_times += 1;
         alloc_count += __n;
-        debug_pack *__tmp = static_cast <debug_pack *> (__ptr);
-        __tmp->pointer = this;
-        __tmp->count   = __n;
+
+        debug_pack __val = {this, __n};
+        auto * const __tmp = static_cast <debug_pack *> (__ptr);
+        *__tmp = __val;
+        *(__tmp + pack_length(__n) - 1) = __val;
         return __tmp + 1;
     }
 
     void *deallocate(void *__ptr) {
         if(!__ptr) return nullptr;
-        debug_pack *__tmp = static_cast <debug_pack *> (__ptr) - 1;
-        if(__tmp->pointer != this) throw error("Deallocate Mismatch!");
-        freed_count += __tmp->count;
+        auto * const __tmp = static_cast <debug_pack *> (__ptr) - 1;
+        debug_pack __val = *__tmp;
+
+        if (__val.pointer != this)
+            throw error("Invalid deallocation!");
+
+        auto *__end = __tmp + pack_length(__val.count) - 1;
+        if (__end->pointer != this
+        ||  __end->count != __val.count)
+            throw error("Invalid deallocation!");
+
+        freed_times += 1;
+        freed_count += __val.count;
+
         return __tmp;
     }
 
@@ -59,9 +84,21 @@ class allocator_debug_helper {
     }
 
     ~allocator_debug_helper() noexcept(false) {
-        if(alloc_count != freed_count)
-            throw error("Memory leak! " + std::to_string(alloc_count - freed_count) + " bytes leaked!");
-        std::cerr << "\n\033[32mNo memory leak is found!\n\033[0m";
+        auto __str = std::format (
+                // "Memory leak detected!\n"
+                "Allocated: {} bytes, {} times.\n"
+                "Freed: {} bytes, {} times.\n"
+                "Total loss: {} bytes, {} times.\n",
+                alloc_count, alloc_times,
+                freed_count, freed_times,
+                alloc_count - freed_count,
+                alloc_times - freed_times
+            );
+        if(alloc_count != freed_count || alloc_times != freed_times) {
+            error("Memory leak detected!\n" + __str);
+        } else {
+            normal("No memory leak is found!\n" + __str);
+        }
     }
 };
 
@@ -70,14 +107,15 @@ class allocator_debugger {
   private:
     allocator_debug_helper *__obj;
   public:
+
     allocator_debugger() noexcept {
         __obj = allocator_debug_helper::get_object();
     }
     ~allocator_debugger() noexcept(false) {
         if(!--__obj->refer_count) delete __obj;
     }
-    void *allocate(size_t __n) noexcept {
-        return __obj->allocate(::std::malloc(__n + __obj->offset),__n);
+    void *allocate(size_t __n) {
+        return __obj->allocate(::std::malloc(__obj->real_size(__n)),__n);
     }
     void deallocate(void *__ptr) noexcept {
         ::std::free(__obj->deallocate(__ptr));
