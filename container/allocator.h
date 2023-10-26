@@ -6,6 +6,7 @@
 #include <cstdlib>
 #include <type_traits>
 #include <utility>
+#include <bits/allocator.h>
 
 namespace dark {
 
@@ -191,23 +192,39 @@ using ::std::free;
 
 
 /* A simple allocator. */
-template <class T>
+template <class _Tp>
 struct allocator {
-    inline static constexpr size_t __N = sizeof(T);
+    inline static constexpr size_t __N = sizeof(_Tp);
 
     template <class U>
     struct rebind { using other = allocator<U>; };
 
     using size_type         = size_t;
     using difference_type   = ptrdiff_t;
-    using value_type        = T;
-    using pointer           = T *;
-    using reference         = T &;
-    using const_pointer     = const T*;
-    using const_reference   = const T&;
+    using value_type        = _Tp;
+    using pointer           = _Tp *;
+    using reference         = _Tp &;
+    using const_pointer     = const _Tp*;
+    using const_reference   = const _Tp&;
 
-    static T *allocate(size_t __n) { return static_cast <T *> (::dark::malloc(__n * __N)); }
-    static void deallocate(T *__ptr, [[maybe_unused]] size_t __n) noexcept { ::dark::free(__ptr); }
+    [[nodiscard,__gnu__::__always_inline__]]
+    constexpr static _Tp *allocate(size_t __n) {
+        if (std::is_constant_evaluated()) {
+            return std::allocator <_Tp> {}.allocate(__n);
+        } else {
+            return static_cast <_Tp *> (::dark::malloc(__n * __N));
+        }
+    }
+
+    [[__gnu__::__always_inline__]]
+    constexpr static void deallocate(_Tp *__ptr,[[maybe_unused]] size_t __n)
+    noexcept {
+        if (std::is_constant_evaluated()) {
+            return std::allocator <_Tp> {}.deallocate(__ptr,__n);
+        } else {
+            return ::dark::free(__ptr);
+        }
+    }
 };
 
 
