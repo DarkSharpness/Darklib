@@ -21,7 +21,7 @@ concept valid_iterator = std::is_pointer_v <__Iter> ||  requires (__Iter __it) {
 
 
 template <class _Tp,class __Iter>
-concept type_iterator = 
+concept type_iterator =
     valid_iterator <__Iter>
 &&  requires (__Iter __it) {
     typename std::enable_if_t <
@@ -37,10 +37,6 @@ consteval bool is_little_endian() noexcept {
 consteval bool is_big_endian() noexcept {
     return std::endian::native == std::endian::big;
 }
-
-
-
-
 
 
 }

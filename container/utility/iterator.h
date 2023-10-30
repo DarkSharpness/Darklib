@@ -102,7 +102,7 @@ struct basic_iterator {
     _Data_Type *node;
 
   public:
-    using mutable_iterator  = basic_iterator <_Traits,false,_Dir>;
+    using mutable_iterator  = basic_iterator <_Traits, false,_Dir>;
     using reverse_iterator  = basic_iterator <_Traits,_Const,!_Dir>;
 
     using iterator_category = typename _Traits::iterator_category;

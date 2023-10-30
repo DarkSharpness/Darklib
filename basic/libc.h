@@ -21,7 +21,7 @@ namespace dark {
 template <bool _IsMove = true, class _Tp>
 [[__gnu__::__always_inline__, maybe_unused]]
 constexpr _Tp *copy_range(_Tp *__dst,const _Tp *__src, size_t __n) noexcept {
-    if (std::__is_constant_evaluated()) {
+    if consteval {
         if (__dst == __src) return __dst;
         if (__dst < __src || __dst >= __src + __n) {
             _Tp *__bak = __dst;
@@ -52,7 +52,7 @@ template <class _Tp>
 requires std::integral <_Tp>
 [[__gnu__::__always_inline__, maybe_unused]]
 constexpr _Tp *fill_data(_Tp *__dst, int __val, size_t __n) noexcept {
-    if (std::__is_constant_evaluated()) {
+    if consteval {
         _Tp __dat {};
         for (size_t i = 0 ; i != sizeof(_Tp) ; ++i)
             __dat = (__dat << CHAR_BIT) | __val;
@@ -77,7 +77,7 @@ requires requires (_Tp __x) { {__x <=> __x} -> std::same_as <std::strong_orderin
 [[__gnu__::__always_inline__, maybe_unused]]
 constexpr std::strong_ordering
     compare_range(const _Tp *__lhs, const _Tp *__rhs, size_t __n) noexcept {
-    if (std::is_constant_evaluated()) {
+    if consteval {
         while(__n--) if (auto __cmp = *__lhs++ <=> *__rhs++ ; __cmp != 0) return __cmp;
         return std::strong_ordering::equivalent;
     } else {
@@ -93,7 +93,7 @@ constexpr std::strong_ordering
  */
 [[__gnu__::__always_inline__, nodiscard]]
 constexpr size_t strlen(const char *__str) noexcept {
-    if (std::__is_constant_evaluated()) {
+    if consteval {
         size_t __len = 0;
         while(*__str++) ++__len;
         return __len;
@@ -111,7 +111,7 @@ constexpr size_t strlen(const char *__str) noexcept {
  */
 [[__gnu__::__always_inline__, nodiscard]]
 constexpr char *strcpy(char *__dst,const char *__src) noexcept {
-    if (std::__is_constant_evaluated()) {
+    if consteval {
         char *__bak = __dst;
         while((*__dst++ = *__src++));
         return __bak;
@@ -128,7 +128,7 @@ constexpr char *strcpy(char *__dst,const char *__src) noexcept {
  */
 constexpr std::strong_ordering
     strcmp(const char *__lhs, const char *__rhs) {
-    if (std::__is_constant_evaluated()) {
+    if consteval {
         while(*__lhs) if (auto __cmp = *__lhs++ <=> *__rhs++ ; __cmp != 0) return __cmp;
         return 0 <=> *__rhs; // _*__lhs must be 0 now.
     } else {
@@ -146,7 +146,7 @@ constexpr std::strong_ordering
  */
 constexpr std::strong_ordering
     strncmp(const char *__lhs, const char *__rhs, size_t __n) {
-    if (std::__is_constant_evaluated()) {
+    if consteval {
         while(__n--) {
             if (*__lhs == 0) return 0 <=> *__rhs; 
             if (auto __cmp = *__lhs++ <=> *__rhs++ ; __cmp != 0) return __cmp;

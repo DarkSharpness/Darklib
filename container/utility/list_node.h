@@ -9,10 +9,7 @@
 namespace dark::list_base {
 
 /* Node for forward list. */
-struct forward_node_base {
-    /* The target node of current node. */
-    forward_node_base *node;
-};
+struct forward_node_base { forward_node_base *node; /* Targeted node. */ };
 
 /* Node for linked list. */
 struct linked_node_base {
@@ -149,6 +146,4 @@ using forward_node = value_node <forward_node_base,T,list_node_tag>;
 template <class T>
 using linked_node  = value_node <linked_node_base,T,list_node_tag>;
 
-
 } // namespace dark::list_base
-

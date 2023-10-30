@@ -6,7 +6,7 @@
 #include <cstdlib>
 #include <type_traits>
 #include <utility>
-#include <bits/allocator.h>
+#include <bits/allocator.h> // Used for constexpr allocator.
 
 namespace dark {
 
@@ -27,16 +27,16 @@ class allocator_debug_helper {
     size_t alloc_count = 0;
     size_t freed_count = 0;
     size_t alloc_times = 0;
-    size_t freed_times = 0;    
+    size_t freed_times = 0;
 
     inline static allocator_debug_helper *single = nullptr;
     inline static constexpr size_t offset = sizeof(debug_pack);
 
-    allocator_debug_helper() = delete;
-    allocator_debug_helper(std::nullptr_t) noexcept {
+    allocator_debug_helper() noexcept {
         normal("Debug allocator is enabled!");
     }
 
+    /* Aligned to offset. */
     static size_t pack_length(size_t __n) noexcept {
         return (__n + (offset - 1)) / offset + 2;
     }
@@ -46,6 +46,7 @@ class allocator_debug_helper {
         return pack_length(__n) * offset;
     }
 
+    /* Perform some operation on allocated memory. */
     void *allocate(void *__ptr,size_t __n) {
         if(!__ptr) throw std::bad_alloc {};
 
@@ -59,9 +60,10 @@ class allocator_debug_helper {
         return __tmp + 1;
     }
 
+    /* Perform some operation before deallocation. */
     void *deallocate(void *__ptr) {
         if(!__ptr) return nullptr;
-        auto * const __tmp = static_cast <debug_pack *> (__ptr) - 1;
+        auto *const __tmp = static_cast <debug_pack *> (__ptr) - 1;
         debug_pack __val = *__tmp;
 
         if (__val.pointer != this)
@@ -79,12 +81,13 @@ class allocator_debug_helper {
     }
 
     static allocator_debug_helper *get_object() {
-        if(single == nullptr) single = new allocator_debug_helper(nullptr);
+        if(single == nullptr)
+            single = new allocator_debug_helper {};
         ++single->refer_count;
         return single;
     }
 
-    ~allocator_debug_helper() noexcept(false) {
+    ~allocator_debug_helper() noexcept {
         auto __str = std::format (
                 // "Memory leak detected!\n"
                 "Allocated: {} bytes, {} times.\n"
@@ -95,26 +98,23 @@ class allocator_debug_helper {
                 alloc_count - freed_count,
                 alloc_times - freed_times
             );
-        if(alloc_count != freed_count || alloc_times != freed_times) {
-            error("Memory leak detected!\n" + __str);
+        if (alloc_count != freed_count || alloc_times != freed_times) {
+            error("\nMemory leak detected!\n" + __str);
         } else {
-            normal("No memory leak is found!\n" + __str);
+            normal("\nNo memory leak is found!\n" + __str);
         }
     }
 };
 
-/* Debug allocator (It will leak only a size of 16 bytes). */
+/* Debug allocator. It is a safer wrapper of debug_helper. */
 class allocator_debugger {
   private:
     allocator_debug_helper *__obj;
   public:
-
-    allocator_debugger() noexcept {
-        __obj = allocator_debug_helper::get_object();
-    }
-    ~allocator_debugger() noexcept(false) {
-        if(!--__obj->refer_count) delete __obj;
-    }
+    allocator_debugger() noexcept : 
+        __obj(allocator_debug_helper::get_object()) {}
+    ~allocator_debugger() noexcept { if(!--__obj->refer_count) delete __obj; }
+    /* Aligned to offset. */
     void *allocate(size_t __n) {
         return __obj->allocate(::std::malloc(__obj->real_size(__n)),__n);
     }
@@ -123,11 +123,13 @@ class allocator_debugger {
     }
 };
 
+/* A safer wrapper of malloc and free. */
 inline void *malloc(size_t __n) noexcept {
     static allocator_debugger __obj;
     return __obj.allocate(__n);
 }
 
+/* A safer wrapper of malloc and free. */
 inline void free(void *__ptr) noexcept {
     static allocator_debugger __obj;
     return __obj.deallocate(__ptr);
@@ -209,7 +211,7 @@ struct allocator {
 
     [[nodiscard,__gnu__::__always_inline__]]
     constexpr static _Tp *allocate(size_t __n) {
-        if (std::is_constant_evaluated()) {
+        if consteval {
             return std::allocator <_Tp> {}.allocate(__n);
         } else {
             return static_cast <_Tp *> (::dark::malloc(__n * __N));
@@ -219,7 +221,7 @@ struct allocator {
     [[__gnu__::__always_inline__]]
     constexpr static void deallocate(_Tp *__ptr,[[maybe_unused]] size_t __n)
     noexcept {
-        if (std::is_constant_evaluated()) {
+        if consteval {
             return std::allocator <_Tp> {}.deallocate(__ptr,__n);
         } else {
             return ::dark::free(__ptr);

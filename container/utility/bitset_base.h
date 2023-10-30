@@ -49,10 +49,10 @@ struct integer_base {
     template <typename _Tp>
     requires std::integral <_Tp> && std::same_as <_Tp, std::decay_t <_Tp>>
     static constexpr void memset(_Tp *__ptr, int __val, size_t __n) noexcept {
-        if (std::is_constant_evaluated()) {
+        if consteval {
             _Tp __dat {};
             for (size_t i = 0 ; i != sizeof(_Tp) ; ++i)
-                __dat = (__dat << 8) | __val;
+                __dat = (__dat << CHAR_BIT) | __val;
             while(__n--) *(__ptr++) = __dat;
         } else {
             std::memset(__ptr, __val, __n * sizeof(_Tp));
@@ -67,7 +67,7 @@ struct integer_base {
     template <typename _Tp>
     requires std::integral <_Tp> && std::same_as <_Tp, std::decay_t <_Tp>>
     static constexpr void memcpy(_Tp *__ptr,const _Tp * __src, size_t __n) noexcept {
-        if (std::is_constant_evaluated()) {
+        if consteval {
             const _Tp *__end = __src + __n;
             while(__src != __end) *(__ptr++) = *(__src++);
         } else {
@@ -83,7 +83,7 @@ struct integer_base {
     template <typename _Tp>
     requires std::integral <_Tp> && std::same_as <_Tp, std::decay_t <_Tp>>
     static constexpr void memmove(_Tp *__ptr,const _Tp * __src, size_t __n) noexcept {
-        if (std::is_constant_evaluated()) {
+        if consteval {
             const _Tp *__end = __src + __n;
             if (__ptr < __src || __ptr >= __end)
                 while(__src != __end) *(__ptr++) = *(__src++);
@@ -104,7 +104,7 @@ struct integer_base {
     template <typename _Tp>
     requires std::integral <_Tp> && std::same_as <_Tp, std::decay_t <_Tp>>
     static constexpr int memcmp(const _Tp *__src, const _Tp *__dst, size_t __n) noexcept {
-        if (std::is_constant_evaluated()) {
+        if consteval {
             while(__n--) {
                 _Tp __lhs = *(__src++);
                 _Tp __rhs = *(__dst++);
@@ -235,9 +235,11 @@ struct bitset_base {
     __BITSET_LOCAL__
     void do_lshift(_Tp *__ptr,const _Tp *__rhs,size_t __offset,size_t __len)
     noexcept {
-        if (std::is_constant_evaluated()) {
+        if consteval { /* Constexpr expression. */
             return const_lshift <_May_Overlap> (__ptr , __rhs , __offset , __len);
-        } else if (__offset % bit_width <std::byte> () != 0) {
+        }
+
+        if (__offset % bit_width <std::byte> () != 0) {
             return dummy_lshift(__ptr , __rhs , __offset , __len);
         } else { /* Reduce to byte-wise first. */
             const size_t __shift = __offset / bit_width <std::byte> ();
@@ -263,9 +265,11 @@ struct bitset_base {
     __BITSET_LOCAL__
     void do_rshift(_Tp *__ptr,const _Tp *__rhs,size_t __offset,size_t __len)
     noexcept {
-        if (std::is_constant_evaluated()) {
+        if consteval { /* Constexpr expression. */
             return const_rshift <_May_Overlap> (__ptr, __rhs, __offset, __len);
-        } else if (__offset % bit_width <std::byte> () != 0) {
+        }
+
+        if (__offset % bit_width <std::byte> () != 0) {
             return dummy_rshift(__ptr, __rhs, __offset, __len);
         } else { /* Reduce to byte-wise first. */
             const size_t __shift = __offset / bit_width <std::byte> ();
