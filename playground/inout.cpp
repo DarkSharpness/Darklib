@@ -1,22 +1,21 @@
 #include <iostream>
 #include <tuple>
 #include <format>
-#include "../basic/libc.h"
 
 namespace play {
 
-template <size_t _Nm = 0,class _Tp, class ..._Up>
-void read_tuple(std::tuple <_Tp,_Up...> &__t) {
-    if constexpr (_Nm > sizeof...(_Up)) return;
+template <size_t _Nm = 0,class ..._Tp>
+void read_tuple(std::tuple <_Tp...> &__t) {
+    if constexpr (_Nm >= sizeof...(_Tp)) return;
     else {
         std::cin >> std::get <_Nm> (__t);
         return read_tuple <_Nm + 1> (__t);
     }
 }
 
-template <class _Tp, class ..._Up>
-std::tuple <_Tp,_Up...> read() {
-    std::tuple <_Tp,_Up...> __t;
+template <class ..._Tp>
+std::tuple <_Tp...> read() {
+    std::tuple <_Tp...> __t;
     read_tuple(__t);
     return __t;
 }
@@ -26,24 +25,20 @@ consteval std::array <char,_Nm * 3> __get_fmt () {
     std::array <char,_Nm * 3> __ret {};
     char *__ptr = __ret.data();
     std::size_t __cnt = _Nm;
-    while(__cnt --> 0) {
-        *__ptr++ = '{';
-        *__ptr++ = '}';
-        *__ptr++ = ' ';
-    }
+    while(__cnt --> 0) { *__ptr++ = '{'; *__ptr++ = '}'; *__ptr++ = ' '; }
     *(__ptr - 1) = '\0';
     return __ret;
 }
 
-
-template <class _Fill>
-struct fill_type {
-    const _Fill &data;
-    fill_type(const _Fill &__data) : data(__data) {}
-};
-
-template <class _Fill>
-fill_type(_Fill) -> fill_type <std::decay_t <_Fill>>;
+template <std::size_t _Nm>
+consteval std::array <char,_Nm * 3 + 1> __get_fmtln () {
+    std::array <char,_Nm * 3 + 1> __ret {};
+    char *__ptr = __ret.data();
+    std::size_t __cnt = _Nm;
+    while(__cnt --> 0) { *__ptr++ = '{'; *__ptr++ = '}'; *__ptr++ = ' '; }
+    *__ptr-- = '\0'; *__ptr = '\n'; 
+    return __ret;
+}
 
 template <class ..._Tp>
 void print (const _Tp &...__args) {
@@ -51,11 +46,17 @@ void print (const _Tp &...__args) {
     std::cout << std::format(__fmt.data() , __args...);
 }
 
+template <class ..._Tp>
+void println (const _Tp &...__args) {
+    static constexpr auto __fmt = __get_fmtln <sizeof...(_Tp)> ();
+    std::cout << std::format(__fmt.data() , __args...);
+}
+
 }
 
 signed main() {
-    auto [x,y] = play::read <int,int> ();
-    play::print(x + y,"123");
-    play::fill_type __fill {1};
+    auto [x,y] = play::read <long,int> ();
+    play::println(x + y,"test1");
+    play::println(x - y,"test2");
     return 0;
 }
