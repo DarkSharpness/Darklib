@@ -1,13 +1,5 @@
-# DarkSharpness's Template Library
+I give up. Its impossible to implement a library that is both easy to use and efficient. You win some, you lose some.
 
-NO WARRANTY! NO WARRANTY! NO WARRANTY!
+Morever, it's stupid to challenge the power of an industry. Individual can hardly rival collective wisdom.
 
-All library implements are based on g++ 13.2 on my windows 11 OS.
-
-All library implements supports C++ 20 and later. [Click here for more Details](docs/README.md)
-
-> C with classes is outdated. C with concepts is in trend ! (by [cqwrteur](https://www.zhihu.com/people/cqwrteur))
-
-(Don't take it too seriously. Just a joke from a joker ~)
-
-
+I will stop wasting my time on this.
