@@ -1,21 +1,25 @@
 #pragma once
-#include "../utility/bitmagic.h"
+#include <bit>
 #include <cstring>
 #include <climits>
 #include <cstdlib>
+#include <exception>
 
 namespace dark {
 
+
 struct dynamic_bitset;
+
 
 namespace __detail::__bitset {
 
+/* Word used in bitset. */
 using _Word_t = std::size_t;
 
 /* Word bits. */
 inline constexpr std::size_t __WBits = sizeof(_Word_t) * CHAR_BIT;
 
-/* Mask __nth bit.  */
+/* Set __n-th bit to 1.  */
 inline constexpr _Word_t
 mask_pos(std::size_t __n) { return _Word_t{1} << __n; }
 
@@ -76,25 +80,25 @@ inline void validate(_Word_t *__dst, std::size_t __n) {
 /* Custom bit manipulator. */
 struct reference {
   private:
-    _Word_t *ptr; // Pointer to the word
-    std::size_t pos; // Position of the bit in the word
+    _Word_t *   ptr;        // Pointer to the word
+    std::size_t msk;        // Mask word of the bit
 
     friend class ::dark::dynamic_bitset;
 
     /* ctor */
     constexpr reference(_Word_t *__ptr, std::size_t __pos)
-    noexcept : ptr(__ptr), pos(__pos) {}
-  public:
+    noexcept : ptr(__ptr), msk(mask_pos(__pos)) {}
 
+  public:
     /* Convert to bool. */
-    constexpr operator bool() const { return (*ptr >> pos) & 1; }
+    constexpr operator bool() const { return *ptr & msk; }
 
     /* Set current bit to 1. */
-    constexpr void set()    { *ptr |= mask_pos(pos); }
+    constexpr void set()    { *ptr |= msk; }
     /* Set current bit to 0. */
-    constexpr void reset()  { *ptr &= ~mask_pos(pos); }
+    constexpr void reset()  { *ptr &= ~msk; }
     /* Flip current bit. */
-    constexpr void flip()   { *ptr ^= mask_pos(pos); }
+    constexpr void flip()   { *ptr ^= msk; }
 
     /* Assign value to current bit. */
     constexpr bool
@@ -107,7 +111,7 @@ struct reference {
 /* Custom bit vector. */
 struct dynamic_storage {
   private:
-    _Word_t *head;      // Pointer to the first word
+    _Word_t *   head;   // Pointer to the first word
     std::size_t buffer; // Buffer size
   protected:
     std::size_t length; // Real length of the bitset
@@ -314,19 +318,31 @@ struct dynamic_bitset : private __detail::__bitset::dynamic_storage {
     using _Bitset   = dynamic_bitset;
     using reference = __detail::__bitset::reference;
 
+    inline static constexpr std::size_t npos = -1;
+
   private:
     using _Base_t = __detail::__bitset::dynamic_storage;
     using _Word_t = __detail::__bitset::_Word_t;
 
     static _Word_t min(_Word_t __x, _Word_t __y) { return __x < __y ? __x : __y; }
-
   public:
     /* ctor and operator section. */
 
-    inline static constexpr std::size_t npos = -1;
-
     dynamic_bitset() = default;
     ~dynamic_bitset() = default;
+
+    dynamic_bitset(const dynamic_bitset &) = default;
+    dynamic_bitset(dynamic_bitset &&) noexcept = default;
+
+    dynamic_bitset &operator = (const dynamic_bitset &) = default;
+    dynamic_bitset &operator = (dynamic_bitset &&) noexcept = default;
+
+    dynamic_bitset(std::size_t __n) : _Base_t(__n, nullptr) {}
+
+    dynamic_bitset(std::size_t __n, bool __x) : _Base_t(__n) {
+        std::memset(this->data(), -__x, this->word_count() * sizeof(_Word_t));
+        if (__x) __detail::__bitset::validate(this->data(), length);
+    }
 
     _Bitset &operator |= (const _Bitset &__rhs) {
         const auto __min = this->min(length, __rhs.length);
@@ -373,7 +389,7 @@ struct dynamic_bitset : private __detail::__bitset::dynamic_storage {
             const auto __data = this->data();
             __detail::__bitset::do_rshift({__data, __data}, length, __n);
             __detail::__bitset::validate(__data, length);
-        } else { length = 0; }
+        } else this->clear();
         return *this;
     }
 
@@ -382,13 +398,41 @@ struct dynamic_bitset : private __detail::__bitset::dynamic_storage {
   public:
     /* Section of member functions that won't bring size changes. */
 
-    _Bitset &set();
+    _Bitset &set() {
+        const auto __size = this->word_count();
+        std::memset(this->data(), -1, __size * sizeof(_Word_t));
+        __detail::__bitset::validate(this->data(), length);
+        return *this;
+    }
+
     _Bitset &flip();
     _Bitset &reset();
 
-    bool all() const;
-    bool any() const;
-    bool none() const;
+    /* Return whether there is any bit set to 1. */
+    bool any() const { return !this->none(); }
+    /* Return whether all bits are set to 1. */
+    bool all() const {
+        auto [__div, __mod] = __detail::__bitset::div_mod(length);
+        for (std::size_t i = 0 ; i != __div ; ++i)
+            if (~data(i) != 0) return false;
+        return data(__div) == __detail::__bitset::mask_low(__mod);
+    }
+    /* Return whether all bits are set to 0. */
+    bool none() const {
+        auto __top = this->word_count();
+        for (std::size_t i = 0 ; i != __top ; ++i)
+            if (data(i) != 0) return false;
+        return true;
+    }
+
+    /* Return the number of bits set to 1. */
+    std::size_t count() const {
+        std::size_t __cnt = 0;
+        auto __top = this->word_count();
+        for (std::size_t i = 0 ; i != __top ; ++i)
+            __cnt += std::popcount(data(i));
+        return __cnt;
+    }
 
     void set(std::size_t __n)       { (*this)[__n].set();     }
     void reset(std::size_t __n)     { (*this)[__n].reset();   }
@@ -399,32 +443,22 @@ struct dynamic_bitset : private __detail::__bitset::dynamic_storage {
         return (data(__div) >> __mod) & 1;
     }
 
-    std::size_t size()  const { return length;}
-
-    std::size_t count() const {
-        std::size_t __cnt = 0;
-        auto __top = this->word_count();
-        for (std::size_t i = 0 ; i < __top ; ++i)
-            __cnt += std::popcount(data(i));
-        return __cnt;
-    }
+    std::size_t size()  const { return length; }
 
     reference operator [] (std::size_t __n) {
         auto [__div, __mod] = __detail::__bitset::div_mod(__n);
         return reference(data() + __div, __mod);
     }
+    reference at(std::size_t __n) { this->range_check(__n); return (*this)[__n]; }
 
     bool operator [] (std::size_t __n) const { return test(__n); }
+    bool at(std::size_t __n) const { range_check(__n); return test(__n); }
 
-    reference at(std::size_t __n) {
-        this->range_check(__n);
-        return (*this)[__n];
-    }
+    reference front() { return (*this)[0]; }
+    reference back()  { return (*this)[length - 1]; }
 
-    bool at(std::size_t __n) const {
-        range_check(__n);
-        return test(__n);
-    }
+    bool front() const { return test(0); }
+    bool back()  const { return test(length - 1); }
 
     std::size_t find_first();
     std::size_t find_next(std::size_t);
@@ -466,7 +500,7 @@ struct dynamic_bitset : private __detail::__bitset::dynamic_storage {
     void debug() {
         using namespace __detail::__bitset;
         const auto [__div, __mod] = div_mod(length);
-        for (std::size_t i = 0 ; i < __div ; ++i) {
+        for (std::size_t i = 0 ; i != __div ; ++i) {
             auto __str = std::bitset <__WBits> (data(i)).to_string();
             std::reverse(__str.begin(), __str.end());
             std::cout << __str << '\n';
