@@ -47,7 +47,8 @@ struct allocator {
     constexpr static void deallocate(_Tp *__ptr,[[maybe_unused]] size_t __n)
     noexcept {
         if (std::is_constant_evaluated()) {
-            return std::allocator <_Tp> {}.deallocate(__ptr,__n);
+            if (__ptr != nullptr)
+                return std::allocator <_Tp> {}.deallocate(__ptr,__n);
         } else {
             return ::std::free(__ptr);
         }
