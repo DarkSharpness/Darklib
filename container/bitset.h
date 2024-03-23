@@ -45,8 +45,8 @@ inline constexpr void deallocate(_Word_t *__ptr, std::size_t __n)
 { allocator<_Word_t>::deallocate(__ptr, __n); }
 
 /* Copy __n words from __src to __dst. */
-inline constexpr void word_copy
-    (_Word_t *__dst, const _Word_t *__src, std::size_t __n) {
+inline constexpr void
+word_copy(_Word_t *__dst, const _Word_t *__src, std::size_t __n) {
     if (std::is_constant_evaluated()) {
         for (std::size_t i = 0 ; i != __n ; ++i)
             __dst[i] = __src[i];
@@ -54,6 +54,18 @@ inline constexpr void word_copy
         std::memcpy(__dst, __src, __n * sizeof(_Word_t));
     }
 }
+
+/* Reset __n words to zero. */
+inline constexpr void
+word_reset(_Word_t *__dst, bool __val, std::size_t __n) {
+    if (std::is_constant_evaluated()) {
+        for (std::size_t i = 0 ; i != __n ; ++i)
+            __dst[i] = -_Word_t(__val);
+    } else {
+        std::memset(__dst, -__val, __n * sizeof(_Word_t));
+    }
+}
+
 
 /* Return the quotient and remainder of __n , 64 */
 inline constexpr auto div_mod(_Word_t __n) {
@@ -257,6 +269,15 @@ static_assert(std::endian::native == std::endian::little,
 struct vec2 { _Word_t *dst; const _Word_t *src; };
 
 inline constexpr void
+word_shift(vec2 __vec, std::size_t __n, ssize_t __count) {
+    if (__count == 0) return;
+    auto [__dst, __src] = __vec;
+    const auto __cnt = div_ceil(__n) - __count;
+    word_copy(__dst + __count, __src, __cnt);
+    if (__count > 0) word_reset(__dst, 0, __count);
+}
+
+inline void
 byte_lshift(vec2 __vec, std::size_t __n, std::size_t __count) {
     if (__count == 0) return;
     auto [__dst, __src] = __vec;
@@ -269,7 +290,7 @@ byte_lshift(vec2 __vec, std::size_t __n, std::size_t __count) {
     std::memset(__raw, 0, __count);
 }
 
-inline constexpr void
+inline void
 byte_rshift(vec2 __vec, std::size_t __n, std::size_t __count) {
     if (__count == 0) return;
     auto [__dst, __src] = __vec;
@@ -281,12 +302,8 @@ byte_rshift(vec2 __vec, std::size_t __n, std::size_t __count) {
     std::memmove(__dst, __raw + __count, __tail);
 }
 
-/* Perform left shift operation without validation. */
 inline constexpr void
-do_lshift(vec2 __vec, std::size_t __n, std::size_t __shift) {
-    if (__shift % CHAR_BIT == 0)
-        return byte_lshift(__vec, __n, __shift / CHAR_BIT);
-
+brute_lshift(vec2 __vec, std::size_t __n, std::size_t __shift) {
     const auto [__div, __mod] = div_mod(__shift);
     const auto [__dst, __src] = __vec;
 
@@ -302,20 +319,17 @@ do_lshift(vec2 __vec, std::size_t __n, std::size_t __shift) {
     }
 
     __dst[__div] = __pre << __mod;
-    std::memset(__dst, 0, __div * sizeof(_Word_t));
+    word_reset(__dst, 0, __div);
 }
 
-/* Perform right shift operation without validation. */
 inline constexpr void
-do_rshift(vec2 __vec, std::size_t __n, std::size_t __shift) {
-    if (__shift % CHAR_BIT == 0)
-        return byte_rshift(__vec, __n, __shift / CHAR_BIT);
-
-    const auto [__dst, __src] = __vec;
+brute_rshift(vec2 __vec, std::size_t __n, std::size_t __shift) {
     const auto [__div, __mod] = div_mod(__shift);
+    const auto [__dst, __src] = __vec;
 
-    const auto __rev = (__mod ^ (__WBits - 1)) + 1; // _WBits - __mod
-    const auto __len = div_down(__n + __shift) - __div;
+    const auto __rev = rev_bits(__mod); // 64 - __mod
+    const auto __len = div_down(__n);
+
     _Word_t __pre = __src[__div];
 
     for (std::size_t i = 0 ; i != __len ; ++i) {
@@ -325,6 +339,38 @@ do_rshift(vec2 __vec, std::size_t __n, std::size_t __shift) {
     }
 
     __dst[__len] = __pre >> __mod;
+}
+
+/* Perform left shift operation without validation. */
+inline constexpr void
+do_lshift(vec2 __vec, std::size_t __n, std::size_t __shift) {
+    if (std::is_constant_evaluated()) {
+        if (__shift % __WBits == 0)
+            return word_shift(__vec, __n, __shift / __WBits);
+        else
+            return brute_lshift(__vec, __n, __shift);
+    } else { // Non-constant evaluation.
+        if (__shift % CHAR_BIT == 0)
+            return byte_lshift(__vec, __n, __shift / CHAR_BIT);
+        else
+            return brute_lshift(__vec, __n, __shift);
+    } 
+}
+
+/* Perform right shift operation without validation. */
+inline constexpr void
+do_rshift(vec2 __vec, std::size_t __n, std::size_t __shift) {
+    if (std::is_constant_evaluated()) {
+        if (__shift % __WBits == 0)
+            return word_shift(__vec, __n, -(__shift / __WBits));
+        else
+            return brute_rshift(__vec, __n, __shift);
+    } else { // Non-constant evaluation.
+        if (__shift % CHAR_BIT == 0)
+            return byte_rshift(__vec, __n, __shift / CHAR_BIT);
+        else
+            return brute_rshift(__vec, __n, __shift);
+    }
 }
 
 
@@ -358,7 +404,7 @@ struct dynamic_bitset : private __detail::__bitset::dynamic_storage {
     constexpr dynamic_bitset(std::size_t __n) : _Base_t(__n, nullptr) {}
 
     constexpr dynamic_bitset(std::size_t __n, bool __x) : _Base_t(__n) {
-        std::memset(this->data(), -__x, this->word_count() * sizeof(_Word_t));
+        __detail::__bitset::word_reset(this->data(), __x, this->word_count());
         if (__x) __detail::__bitset::validate(this->data(), length);
     }
 
@@ -418,7 +464,7 @@ struct dynamic_bitset : private __detail::__bitset::dynamic_storage {
 
     constexpr _Bitset &set() {
         const auto __size = this->word_count();
-        std::memset(this->data(), -1, __size * sizeof(_Word_t));
+        __detail::__bitset::word_reset(this->data(), 1, __size);
         __detail::__bitset::validate(this->data(), length);
         return *this;
     }
@@ -506,7 +552,7 @@ struct dynamic_bitset : private __detail::__bitset::dynamic_storage {
         }
 
         const auto __data = this->data();
-        std::memset(__data, -__x, __size * sizeof(_Word_t));
+        __detail::__bitset::word_reset(__data, __x, __size);
 
         // Validate the last word for the last bits.
         if (__x) __detail::__bitset::validate(__data, length);
