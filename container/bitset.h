@@ -3,7 +3,7 @@
 #include <cstring>
 #include <climits>
 #include <cstdlib>
-#include <exception>
+#include <stdexcept>
 #include "allocator.h"
 
 namespace dark {
@@ -55,7 +55,7 @@ word_copy(_Word_t *__dst, const _Word_t *__src, std::size_t __n) {
     }
 }
 
-/* Reset __n words to zero. */
+/* Reset __n words to given 0 or 1. */
 inline constexpr void
 word_reset(_Word_t *__dst, bool __val, std::size_t __n) {
     if (std::is_constant_evaluated()) {
@@ -164,8 +164,7 @@ struct dynamic_storage {
 
     constexpr dynamic_storage(std::size_t __n, std::nullptr_t) {
         head = alloc_zero(__n);
-        buffer = __n;
-        length = div_ceil(__n) * __WBits;
+        buffer = length = __n;
     }
 
     constexpr dynamic_storage(const dynamic_storage &rhs)
@@ -300,6 +299,8 @@ byte_rshift(vec2 __vec, std::size_t __n, std::size_t __count) {
 
     auto *__raw = reinterpret_cast <const std::byte *> (__src);
     std::memmove(__dst, __raw + __count, __tail);
+
+    return validate(__dst, __n);
 }
 
 inline constexpr void
@@ -308,18 +309,19 @@ brute_lshift(vec2 __vec, std::size_t __n, std::size_t __shift) {
     const auto [__dst, __src] = __vec;
 
     const auto __rev = rev_bits(__mod); // 64 - __mod
-    const auto __len = div_down(__n);
+    const auto __len = __n / __WBits;
 
-    _Word_t __pre = __src[__len - __div];
+    /* The last word may be unsafe. */
+    _Word_t __pre = (__n % __WBits > __mod) ? __src[__len - __div] : 0;
 
     for (std::size_t i = __len ; i != __div ; --i) {
-        _Word_t __cur = __src[i - 1 - __div];
+        auto __cur = __src[i - 1 - __div];
         __dst[i] = __pre << __mod | __cur >> __rev;
         __pre = __cur; // Update the previous word.
     }
 
     __dst[__div] = __pre << __mod;
-    word_reset(__dst, 0, __div);
+    return word_reset(__dst, 0, __div);
 }
 
 inline constexpr void
@@ -328,49 +330,39 @@ brute_rshift(vec2 __vec, std::size_t __n, std::size_t __shift) {
     const auto [__dst, __src] = __vec;
 
     const auto __rev = rev_bits(__mod); // 64 - __mod
-    const auto __len = div_down(__n);
+    const auto __len = __n / __WBits;
 
     _Word_t __pre = __src[__div];
 
     for (std::size_t i = 0 ; i != __len ; ++i) {
-        _Word_t __cur = __src[i + 1 + __div];
+        auto __cur = __src[i + 1 + __div];
         __dst[i] = __pre >> __mod | __cur << __rev;
         __pre = __cur; // Update the previous word.
     }
 
-    __dst[__len] = __pre >> __mod;
+    /* The last word may be unsafe. */
+    _Word_t __cur = (__n % __WBits > __rev) ? __src[__len + __div + 1] : 0;
+
+    /* Rely on the fact that the unused bit of src is filled with 0. */
+    __dst[__len] = __pre >> __mod | __cur << __rev;
 }
 
-/* Perform left shift operation without validation. */
+/* Perform left shift operation without any validation. */
 inline constexpr void
 do_lshift(vec2 __vec, std::size_t __n, std::size_t __shift) {
-    if (std::is_constant_evaluated()) {
-        if (__shift % __WBits == 0)
-            return word_shift(__vec, __n, __shift / __WBits);
-        else
-            return brute_lshift(__vec, __n, __shift);
-    } else { // Non-constant evaluation.
-        if (__shift % CHAR_BIT == 0)
-            return byte_lshift(__vec, __n, __shift / CHAR_BIT);
-        else
-            return brute_lshift(__vec, __n, __shift);
-    } 
+    if (std::is_constant_evaluated() || __shift % CHAR_BIT != 0)
+        return brute_lshift(__vec, __n, __shift);
+    else // __shift % CHAR_BIT == 0. Align to byte.
+        return byte_lshift(__vec, __n, __shift / CHAR_BIT);
 }
 
-/* Perform right shift operation without validation. */
+/* Perform right shift operation with natural validation. */
 inline constexpr void
 do_rshift(vec2 __vec, std::size_t __n, std::size_t __shift) {
-    if (std::is_constant_evaluated()) {
-        if (__shift % __WBits == 0)
-            return word_shift(__vec, __n, -(__shift / __WBits));
-        else
-            return brute_rshift(__vec, __n, __shift);
-    } else { // Non-constant evaluation.
-        if (__shift % CHAR_BIT == 0)
-            return byte_rshift(__vec, __n, __shift / CHAR_BIT);
-        else
-            return brute_rshift(__vec, __n, __shift);
-    }
+    if (std::is_constant_evaluated() || __shift % CHAR_BIT != 0)
+         return brute_rshift(__vec, __n, __shift);
+    else // __shift % CHAR_BIT == 0. Align to byte.
+        return byte_rshift(__vec, __n, __shift / CHAR_BIT);
 }
 
 
@@ -406,6 +398,12 @@ struct dynamic_bitset : private __detail::__bitset::dynamic_storage {
     constexpr dynamic_bitset(std::size_t __n, bool __x) : _Base_t(__n) {
         __detail::__bitset::word_reset(this->data(), __x, this->word_count());
         if (__x) __detail::__bitset::validate(this->data(), length);
+    }
+
+    constexpr dynamic_bitset(std::string_view __str) : dynamic_bitset(__str.size()) {
+        length = __str.size();
+        for (std::size_t i = 0 ; i != length ; ++i)
+            if (__str[i] == '1') this->set(i);
     }
 
     constexpr _Bitset &operator |= (const _Bitset &__rhs) {
@@ -452,7 +450,6 @@ struct dynamic_bitset : private __detail::__bitset::dynamic_storage {
             length -= __n;
             const auto __data = this->data();
             __detail::__bitset::do_rshift({__data, __data}, length, __n);
-            __detail::__bitset::validate(__data, length);
         } else this->clear();
         return *this;
     }
@@ -469,8 +466,19 @@ struct dynamic_bitset : private __detail::__bitset::dynamic_storage {
         return *this;
     }
 
-    constexpr _Bitset &flip();
-    constexpr _Bitset &reset();
+    constexpr _Bitset &flip() {
+        const auto __size = this->word_count();
+        for (std::size_t i = 0 ; i != __size ; ++i)
+            this->data(i) = ~this->data(i);
+        __detail::__bitset::validate(this->data(), length);
+        return *this;
+    }
+
+    constexpr _Bitset &reset() {
+        const auto __size = this->word_count();
+        __detail::__bitset::word_reset(this->data(), 0, __size);
+        return *this;
+    }
 
     /* Return whether there is any bit set to 1. */
     constexpr bool any() const { return !this->none(); }
@@ -531,7 +539,7 @@ struct dynamic_bitset : private __detail::__bitset::dynamic_storage {
     constexpr void push_back(bool __x) {
         using namespace __detail::__bitset;
         if (const auto __mod = length++ % __WBits) {
-            data(div_down(length)) |= __x << (length % __WBits - 1);
+            data(div_down(length)) |= (_Word_t(__x) << __mod);
         } else { // Full word, so grow the storage by 1.
             this->grow_full(__x);
         }
