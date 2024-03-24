@@ -44,14 +44,40 @@ alloc_none(std::size_t __n) { return allocator<_Word_t>::allocate(__n); }
 inline constexpr void deallocate(_Word_t *__ptr, std::size_t __n)
 { allocator<_Word_t>::deallocate(__ptr, __n); }
 
-/* Copy __n words from __src to __dst. */
+/* Copy __n words from __src to __dst (memcpy/memmove). */
+template <bool _Move = false>
 inline constexpr void
 word_copy(_Word_t *__dst, const _Word_t *__src, std::size_t __n) {
     if (std::is_constant_evaluated()) {
-        for (std::size_t i = 0 ; i != __n ; ++i)
-            __dst[i] = __src[i];
+        if (__src == __dst) return; // No need to copy.
+        if (__dst < __src + __n && __src < __dst) {
+            // Overlapping, copy from the end.
+            __dst += __n; __src += __n;
+            for (std::size_t i = 0 ; i != __n ; ++i)
+                *--__dst = *--__src;
+        } else {
+            for (std::size_t i = 0 ; i != __n ; ++i)
+                __dst[i] = __src[i];
+        }
+    } else { // Non-constant evaluated.
+        const std::size_t __size = __n * sizeof(_Word_t);
+        if constexpr (_Move) {
+            std::memmove(__dst, __src, __size);
+        } else {
+            std::memcpy(__dst, __src, __size);
+        }
+    }
+}
+
+/* Move __n words from __src to __dst using memmove. */
+inline constexpr void
+word_move(_Word_t *__dst, const _Word_t *__src, std::size_t __n) {
+    if (std::is_constant_evaluated()) {
+        if (__dst <= __src && __dst + __n > __src)
+            for (std::size_t i = __n - 1 ; i >= 0 ; --i)
+                __dst[i] = __src[i];
     } else {
-        std::memcpy(__dst, __src, __n * sizeof(_Word_t));
+        std::memmove(__dst, __src, __n * sizeof(_Word_t));
     }
 }
 
@@ -272,35 +298,30 @@ operator >> (vec2 __vec, std::size_t __n) { return {__vec.dst, __vec.src + __n};
 inline static constexpr vec2
 operator + (vec2 __vec, std::size_t __n) { return {__vec.dst + __n, __vec.src + __n}; }
 
-inline void
-byte_lshift(vec2 __vec, std::size_t __n, std::size_t __count) {
-    if (__count == 0) return;
-    auto [__dst, __src] = __vec;
-
-    const auto __size = sizeof(_Word_t);              // Word size.
-    const auto __tail = (__n + __size - 1) / __size;  // Byte last.
-
-    auto *__raw = reinterpret_cast <std::byte *> (__dst);
-    std::memmove(__raw + __count, __src, __tail - __count);
-    std::memset(__raw, 0, __count);
-}
-
-inline void
-byte_rshift(vec2 __vec, std::size_t __n, std::size_t __count) {
-    if (__count == 0) return;
-    auto [__dst, __src] = __vec;
-
-    const auto __size = sizeof(_Word_t);              // Word size.
-    const auto __tail = (__n + __size - 1) / __size;  // Byte last.
-
-    auto *__raw = reinterpret_cast <const std::byte *> (__src);
-    std::memmove(__dst, __raw + __count, __tail);
-
-    return validate(__dst, __n);
-}
-
+/* Lshift word by word (with memmove) */
 inline constexpr void
-brute_lshift(vec2 __vec, std::size_t __n, std::size_t __shift) {
+word_lshift(vec2 __vec, std::size_t __n, std::size_t __shift) {
+    if (__shift == 0) return;
+    const auto [__dst, __src] = __vec;
+    const auto __offset = __shift / __WBits;
+    const auto __count  = div_ceil(__n) - __offset;
+    word_copy<true>(__dst + __offset, __src, __count);
+    return word_reset(__dst, 0, __offset);
+}
+
+/* Rshift word by word. */
+inline constexpr void
+word_rshift(vec2 __vec, std::size_t __n, std::size_t __shift) {
+    if (__shift == 0) return;
+    const auto [__dst, __src] = __vec;
+    const auto __offset = __shift / __WBits;
+    const auto __count  = div_ceil(__n) - __offset;
+    return word_copy<true>(__dst, __src + __offset, __count);
+}
+
+/* Lshift bits by bits. */
+inline constexpr void
+bits_lshift(vec2 __vec, std::size_t __n, std::size_t __shift) {
     const auto [__div, __mod] = div_mod(__shift);
 
     const auto __len = div_down(__n);
@@ -325,8 +346,9 @@ brute_lshift(vec2 __vec, std::size_t __n, std::size_t __shift) {
     return word_reset(__dst - __div, 0, __div);
 }
 
+/* Lshift bits by bits. */
 inline constexpr void
-brute_rshift(vec2 __vec, std::size_t __n, std::size_t __shift) {
+bits_rshift(vec2 __vec, std::size_t __n, std::size_t __shift) {
     const auto [__div, __mod] = div_mod(__shift);
 
     const auto __len = div_down(__n);
@@ -353,19 +375,19 @@ brute_rshift(vec2 __vec, std::size_t __n, std::size_t __shift) {
 /* Perform left shift operation without any validation. */
 inline constexpr void
 do_lshift(vec2 __vec, std::size_t __n, std::size_t __shift) {
-    if (std::is_constant_evaluated() || __shift % CHAR_BIT != 0)
-        return brute_lshift(__vec, __n, __shift);
+    if (__shift % __WBits != 0)
+        return bits_lshift(__vec, __n, __shift);
     else // __shift % CHAR_BIT == 0. Align to byte.
-        return byte_lshift(__vec, __n, __shift / CHAR_BIT);
+        return word_lshift(__vec, __n, __shift);
 }
 
 /* Perform right shift operation with natural validation. */
 inline constexpr void
 do_rshift(vec2 __vec, std::size_t __n, std::size_t __shift) {
-    if (std::is_constant_evaluated() || __shift % CHAR_BIT != 0)
-         return brute_rshift(__vec, __n, __shift);
+    if (__shift % __WBits != 0)
+        return bits_rshift(__vec, __n, __shift);
     else // __shift % CHAR_BIT == 0. Align to byte.
-        return byte_rshift(__vec, __n, __shift / CHAR_BIT);
+        return word_rshift(__vec, __n, __shift);
 }
 
 
