@@ -265,14 +265,12 @@ static_assert(std::endian::native == std::endian::little,
 /* 2-pointer small struct. */
 struct vec2 { _Word_t *dst; const _Word_t *src; };
 
-inline constexpr void
-word_shift(vec2 __vec, std::size_t __n, ssize_t __count) {
-    if (__count == 0) return;
-    auto [__dst, __src] = __vec;
-    const auto __cnt = div_ceil(__n) - __count;
-    word_copy(__dst + __count, __src, __cnt);
-    if (__count > 0) word_reset(__dst, 0, __count);
-}
+inline static constexpr vec2
+operator << (vec2 __vec, std::size_t __n) { return {__vec.dst, __vec.src - __n}; }
+inline static constexpr vec2
+operator >> (vec2 __vec, std::size_t __n) { return {__vec.dst, __vec.src + __n}; }
+inline static constexpr vec2
+operator + (vec2 __vec, std::size_t __n) { return {__vec.dst + __n, __vec.src + __n}; }
 
 inline void
 byte_lshift(vec2 __vec, std::size_t __n, std::size_t __count) {
@@ -304,45 +302,52 @@ byte_rshift(vec2 __vec, std::size_t __n, std::size_t __count) {
 inline constexpr void
 brute_lshift(vec2 __vec, std::size_t __n, std::size_t __shift) {
     const auto [__div, __mod] = div_mod(__shift);
-    const auto [__dst, __src] = __vec;
 
+    const auto __len = div_down(__n);
     const auto __rev = rev_bits(__mod); // 64 - __mod
-    const auto __len = __n / __WBits;
+    const auto __end = __vec.src;
+
+    auto [__dst, __src] = (__vec + __len) << __div;
 
     /* The last word may be unsafe. */
-    _Word_t __pre = (__n % __WBits > __mod) ? __src[__len - __div] : 0;
+    auto __pre = div_down(__n - __mod) == __len ? *__src : 0;
 
-    for (std::size_t i = __len ; i != __div ; --i) {
-        auto __cur = __src[i - 1 - __div];
-        __dst[i] = __pre << __mod | __cur >> __rev;
+    while (__src != __end) {
+        auto __cur = *--__src;
+        *__dst-- = __pre << __mod | __cur >> __rev;
         __pre = __cur; // Update the previous word.
     }
 
-    __dst[__div] = __pre << __mod;
-    return word_reset(__dst, 0, __div);
+    /* The first word must be safe. */
+    *__dst = __pre << __mod;
+
+    /* Validate those words in the front. */
+    return word_reset(__dst - __div, 0, __div);
 }
 
 inline constexpr void
 brute_rshift(vec2 __vec, std::size_t __n, std::size_t __shift) {
     const auto [__div, __mod] = div_mod(__shift);
-    const auto [__dst, __src] = __vec;
 
+    const auto __len = div_down(__n);
     const auto __rev = rev_bits(__mod); // 64 - __mod
-    const auto __len = __n / __WBits;
+    const auto __end = __vec.dst + __len;
 
-    _Word_t __pre = __src[__div];
+    auto [__dst, __src] = __vec >> __div;
+    /* The first word must be safe. */
+    auto __pre = *__src;
 
-    for (std::size_t i = 0 ; i != __len ; ++i) {
-        auto __cur = __src[i + 1 + __div];
-        __dst[i] = __pre >> __mod | __cur << __rev;
+    while (__dst != __end) {
+        auto __cur = *++__src;
+        *__dst++ = __pre >> __mod | __cur << __rev;
         __pre = __cur; // Update the previous word.
     }
 
     /* The last word may be unsafe. */
-    _Word_t __cur = (__n % __WBits > __rev) ? __src[__len + __div + 1] : 0;
+    auto __cur = div_down(__n + __mod) == __len ? 0 : *++__src;
 
     /* Rely on the fact that the unused bit of src is filled with 0. */
-    __dst[__len] = __pre >> __mod | __cur << __rev;
+    *__dst = __pre >> __mod | __cur << __rev;
 }
 
 /* Perform left shift operation without any validation. */
