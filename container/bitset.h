@@ -138,7 +138,7 @@ struct dynamic_storage {
 
     /* Reallocate memory. */
     constexpr void
-    realloc(std::size_t __n) { head = alloc_none(__n); buffer = __n; }
+    realloc(std::size_t __n) { head = alloc_none(buffer = __n); }
 
     /* Deallocate memory. */
     constexpr void dealloc() { deallocate(head, buffer); }
@@ -158,13 +158,11 @@ struct dynamic_storage {
     constexpr dynamic_storage()   noexcept { this->reset();   }
 
     constexpr dynamic_storage(std::size_t __n) {
-        head = alloc_none(__n);
-        buffer = length = __n;
+        head = alloc_none(buffer = div_ceil(length = __n));
     }
 
     constexpr dynamic_storage(std::size_t __n, std::nullptr_t) {
-        head = alloc_zero(__n);
-        buffer = length = __n;
+        head = alloc_zero(buffer = div_ceil(length = __n));
     }
 
     constexpr dynamic_storage(const dynamic_storage &rhs)
