@@ -87,3 +87,11 @@ constexpr auto operator | (std::string_view name, remove_scope_t) {
 
 
 } // namespace dark
+
+/**
+ * A function-like macro for dark::meta::nameof.
+ * It can be used to print the name of:
+ * - any type
+ * - constexpr value
+ */
+#define nameof(x) dark::meta::nameof <x> ()
