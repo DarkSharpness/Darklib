@@ -70,21 +70,16 @@ template <class _Tp>
 constexpr auto nameof() { return type_string <_Tp> (); }
 
 /* A function-programming style class, remove all scopes.  */
-inline constexpr static struct remove_scope_t {} remove_scope;
+inline constexpr static struct remove_scope_t {
+    /* We utilize the fact that npos == -1 */
+    static_assert(std::string_view::npos + 1 == 0);
+    constexpr auto operator()(std::string_view name) const {
+        return name.substr(name.find_last_of(':') + 1);
+    }
+} remove_scope;
 
-/* We utilize the fact that npos == -1 */
-static_assert(std::string_view::npos + 1 == 0);
-
-constexpr auto operator | (remove_scope_t, std::string_view name) {
-    const auto pos = name.find_last_of(':');
-    return name.substr(pos + 1);
-}
-
-constexpr auto operator | (std::string_view name, remove_scope_t) {
-    const auto pos = name.find_last_of(':');
-    return name.substr(pos + 1);
-}
-
+constexpr auto operator | (remove_scope_t, std::string_view name) { return remove_scope(name); }
+constexpr auto operator | (std::string_view name, remove_scope_t) { return remove_scope(name); }
 
 } // namespace dark
 
