@@ -1,4 +1,5 @@
 #pragma once
+#include "basic.h"
 #include <string_view>
 #include <source_location>
 
@@ -26,8 +27,9 @@ consteval auto cstrlen(const char *ptr) {
     return end - ptr;
 }
 
+struct info { size_t left_omit, right_omit; };
+
 consteval auto get_type_blank() {
-    struct info { std::size_t left_omit, right_omit; };
     const auto result = func_info <void>();
     const auto l = result.find("void");
     const auto r = result.size() - l - cstrlen("void");
@@ -35,7 +37,6 @@ consteval auto get_type_blank() {
 }
 
 consteval auto get_value_blank() {
-    struct info { std::size_t left_omit, right_omit; };
     const auto result = func_info <nullptr> ();
     const auto l = result.find("nullptr");
     const auto r = result.size() - l - cstrlen("nullptr");

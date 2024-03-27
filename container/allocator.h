@@ -1,5 +1,6 @@
 /* A simple allocator. */
 #pragma once
+#include "basic.h"
 #include <cstdlib>
 #include <bits/allocator.h>
 #include <type_traits>
@@ -8,7 +9,7 @@ namespace dark {
 
 template <class _Tp>
 struct allocator {
-    inline static constexpr std::size_t __N = sizeof(_Tp);
+    inline static constexpr size_t __N = sizeof(_Tp);
 
     template <class U>
     struct rebind { using other = allocator<U>; };

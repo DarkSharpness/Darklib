@@ -15,52 +15,52 @@ struct dynamic_bitset;
 namespace __detail::__bitset {
 
 /* Word used in bitset. */
-using _Word_t = std::size_t;
+using _Word_t = size_t;
 
 /* Word bits. */
-inline constexpr std::size_t __WBits = sizeof(_Word_t) * CHAR_BIT;
+inline constexpr size_t __WBits = sizeof(_Word_t) * CHAR_BIT;
 
 /* Set __n-th bit to 1.  */
 inline constexpr _Word_t
-mask_pos(std::size_t __n) { return _Word_t{1} << __n; }
+mask_pos(size_t __n) { return _Word_t{1} << __n; }
 
 /* Set first n low bits to 1, others to 0. */
 inline constexpr _Word_t
-mask_low(std::size_t __n) { return (_Word_t{1} << __n) - 1; }
+mask_low(size_t __n) { return (_Word_t{1} << __n) - 1; }
 
 /* Set first n low bits to 0, others to 1. */
 inline constexpr _Word_t
-mask_top(std::size_t __n) { return (~_Word_t{0}) << __n; }
+mask_top(size_t __n) { return (~_Word_t{0}) << __n; }
 
 /* Allocate a sequence of zero memory. */
 inline constexpr _Word_t *
-alloc_zero(std::size_t __n) { return allocator<_Word_t>::calloc(__n); }
+alloc_zero(size_t __n) { return allocator<_Word_t>::calloc(__n); }
 
 /* Allocate a sequence of raw memory. */
 inline constexpr _Word_t *
-alloc_none(std::size_t __n) { return allocator<_Word_t>::allocate(__n); }
+alloc_none(size_t __n) { return allocator<_Word_t>::allocate(__n); }
 
 /* Deallocate memory. */
-inline constexpr void deallocate(_Word_t *__ptr, std::size_t __n)
+inline constexpr void deallocate(_Word_t *__ptr, size_t __n)
 { allocator<_Word_t>::deallocate(__ptr, __n); }
 
 /* Copy __n words from __src to __dst (memcpy/memmove). */
 template <bool _Move = false>
 inline constexpr void
-word_copy(_Word_t *__dst, const _Word_t *__src, std::size_t __n) {
+word_copy(_Word_t *__dst, const _Word_t *__src, size_t __n) {
     if (std::is_constant_evaluated()) {
         if (__src == __dst) return; // No need to copy.
         if (__dst < __src + __n && __src < __dst) {
             // Overlapping, copy from the end.
             __dst += __n; __src += __n;
-            for (std::size_t i = 0 ; i != __n ; ++i)
+            for (size_t i = 0 ; i != __n ; ++i)
                 *--__dst = *--__src;
         } else {
-            for (std::size_t i = 0 ; i != __n ; ++i)
+            for (size_t i = 0 ; i != __n ; ++i)
                 __dst[i] = __src[i];
         }
     } else { // Non-constant evaluated.
-        const std::size_t __size = __n * sizeof(_Word_t);
+        const size_t __size = __n * sizeof(_Word_t);
         if constexpr (_Move) {
             std::memmove(__dst, __src, __size);
         } else {
@@ -71,10 +71,10 @@ word_copy(_Word_t *__dst, const _Word_t *__src, std::size_t __n) {
 
 /* Move __n words from __src to __dst using memmove. */
 inline constexpr void
-word_move(_Word_t *__dst, const _Word_t *__src, std::size_t __n) {
+word_move(_Word_t *__dst, const _Word_t *__src, size_t __n) {
     if (std::is_constant_evaluated()) {
         if (__dst <= __src && __dst + __n > __src)
-            for (std::size_t i = __n - 1 ; i >= 0 ; --i)
+            for (size_t i = __n - 1 ; i >= 0 ; --i)
                 __dst[i] = __src[i];
     } else {
         std::memmove(__dst, __src, __n * sizeof(_Word_t));
@@ -83,9 +83,9 @@ word_move(_Word_t *__dst, const _Word_t *__src, std::size_t __n) {
 
 /* Reset __n words to given 0 or 1. */
 inline constexpr void
-word_reset(_Word_t *__dst, bool __val, std::size_t __n) {
+word_reset(_Word_t *__dst, bool __val, size_t __n) {
     if (std::is_constant_evaluated()) {
-        for (std::size_t i = 0 ; i != __n ; ++i)
+        for (size_t i = 0 ; i != __n ; ++i)
             __dst[i] = -_Word_t(__val);
     } else {
         std::memset(__dst, -__val, __n * sizeof(_Word_t));
@@ -118,7 +118,7 @@ inline constexpr _Word_t rev_bits(_Word_t __n) {
 }
 
 /* Make the last word valid. */
-inline constexpr void validate(_Word_t *__dst, std::size_t __n) {
+inline constexpr void validate(_Word_t *__dst, size_t __n) {
     const auto [__div, __mod] = div_mod(__n);
     if (__mod != 0) __dst[__div] &= mask_low(__mod);
 }
@@ -127,12 +127,12 @@ inline constexpr void validate(_Word_t *__dst, std::size_t __n) {
 struct reference {
   private:
     _Word_t *   ptr;        // Pointer to the word
-    std::size_t msk;        // Mask word of the bit
+    size_t msk;        // Mask word of the bit
 
     friend class ::dark::dynamic_bitset;
 
     /* ctor */
-    constexpr reference(_Word_t *__ptr, std::size_t __pos)
+    constexpr reference(_Word_t *__ptr, size_t __pos)
     noexcept : ptr(__ptr), msk(mask_pos(__pos)) {}
 
   public:
@@ -158,19 +158,19 @@ struct reference {
 struct dynamic_storage {
   private:
     _Word_t *   head;   // Pointer to the first word
-    std::size_t buffer; // Buffer size
+    size_t buffer; // Buffer size
   protected:
-    std::size_t length; // Real length of the bitset
+    size_t length; // Real length of the bitset
 
     /* Reallocate memory. */
     constexpr void
-    realloc(std::size_t __n) { head = alloc_none(buffer = __n); }
+    realloc(size_t __n) { head = alloc_none(buffer = __n); }
 
     /* Deallocate memory. */
     constexpr void dealloc() { deallocate(head, buffer); }
 
     /* Deallocate memory. */
-    constexpr static void dealloc(_Word_t *__ptr, std::size_t __n) {
+    constexpr static void dealloc(_Word_t *__ptr, size_t __n) {
         deallocate(__ptr, __n);
     }
 
@@ -183,11 +183,11 @@ struct dynamic_storage {
     constexpr ~dynamic_storage()  noexcept { this->dealloc(); }
     constexpr dynamic_storage()   noexcept { this->reset();   }
 
-    constexpr dynamic_storage(std::size_t __n) {
+    constexpr dynamic_storage(size_t __n) {
         head = alloc_none(buffer = div_ceil(length = __n));
     }
 
-    constexpr dynamic_storage(std::size_t __n, std::nullptr_t) {
+    constexpr dynamic_storage(size_t __n, std::nullptr_t) {
         head = alloc_zero(buffer = div_ceil(length = __n));
     }
 
@@ -221,9 +221,9 @@ struct dynamic_storage {
     /* Function section. */
 
     /* Return the real word in the bitmap */
-    constexpr std::size_t word_count() const { return div_ceil(length); }
+    constexpr size_t word_count() const { return div_ceil(length); }
     /* Return the capacity of the storage. */
-    constexpr std::size_t capacity()   const { return buffer; }
+    constexpr size_t capacity()   const { return buffer; }
 
     constexpr dynamic_storage &swap(dynamic_storage &rhs) {
         std::swap(head, rhs.head);
@@ -233,8 +233,8 @@ struct dynamic_storage {
     }
 
     constexpr _Word_t *data() const { return head; }
-    constexpr _Word_t  data(std::size_t __n) const { return head[__n]; }
-    constexpr _Word_t &data(std::size_t __n)       { return head[__n]; }
+    constexpr _Word_t  data(size_t __n) const { return head[__n]; }
+    constexpr _Word_t &data(size_t __n)       { return head[__n]; }
 
     /* Grow the size by one, and fill with given value in the back. */
     constexpr void grow_full(bool __val) {
@@ -259,27 +259,27 @@ struct dynamic_storage {
 };
 
 inline constexpr void
-do_and(_Word_t *__dst, const _Word_t *__rhs, std::size_t __n) {
+do_and(_Word_t *__dst, const _Word_t *__rhs, size_t __n) {
     const auto [__div, __mod] = div_mod(__n);
-    for (std::size_t i = 0; i != __div; ++i)
+    for (size_t i = 0; i != __div; ++i)
         __dst[i] &= __rhs[i];
     if (__mod != 0)
         __dst[__div] &= __rhs[__div] | mask_top(__mod);
 }
 
 inline constexpr void
-do_or_(_Word_t *__dst, const _Word_t *__rhs, std::size_t __n) {
+do_or_(_Word_t *__dst, const _Word_t *__rhs, size_t __n) {
     const auto [__div, __mod] = div_mod(__n);
-    for (std::size_t i = 0; i != __div; ++i)
+    for (size_t i = 0; i != __div; ++i)
         __dst[i] |= __rhs[i];
     if (__mod != 0)
         __dst[__div] |= __rhs[__div] & mask_low(__mod);
 }
 
 inline constexpr void
-do_xor(_Word_t *__dst, const _Word_t *__rhs, std::size_t __n) {
+do_xor(_Word_t *__dst, const _Word_t *__rhs, size_t __n) {
     const auto [__div, __mod] = div_mod(__n);
-    for (std::size_t i = 0; i != __div; ++i)
+    for (size_t i = 0; i != __div; ++i)
         __dst[i] ^= __rhs[i];
     if (__mod != 0)
         __dst[__div] ^= __rhs[__div] & mask_low(__mod);
@@ -292,15 +292,15 @@ static_assert(std::endian::native == std::endian::little,
 struct vec2 { _Word_t *dst; const _Word_t *src; };
 
 inline static constexpr vec2
-operator << (vec2 __vec, std::size_t __n) { return {__vec.dst, __vec.src - __n}; }
+operator << (vec2 __vec, size_t __n) { return {__vec.dst, __vec.src - __n}; }
 inline static constexpr vec2
-operator >> (vec2 __vec, std::size_t __n) { return {__vec.dst, __vec.src + __n}; }
+operator >> (vec2 __vec, size_t __n) { return {__vec.dst, __vec.src + __n}; }
 inline static constexpr vec2
-operator + (vec2 __vec, std::size_t __n) { return {__vec.dst + __n, __vec.src + __n}; }
+operator + (vec2 __vec, size_t __n) { return {__vec.dst + __n, __vec.src + __n}; }
 
 /* Lshift word by word (with memmove) */
 inline constexpr void
-word_lshift(vec2 __vec, std::size_t __n, std::size_t __shift) {
+word_lshift(vec2 __vec, size_t __n, size_t __shift) {
     if (__shift == 0) return;
     const auto [__dst, __src] = __vec;
     const auto __offset = __shift / __WBits;
@@ -311,7 +311,7 @@ word_lshift(vec2 __vec, std::size_t __n, std::size_t __shift) {
 
 /* Rshift word by word. */
 inline constexpr void
-word_rshift(vec2 __vec, std::size_t __n, std::size_t __shift) {
+word_rshift(vec2 __vec, size_t __n, size_t __shift) {
     if (__shift == 0) return;
     const auto [__dst, __src] = __vec;
     const auto __offset = __shift / __WBits;
@@ -321,7 +321,7 @@ word_rshift(vec2 __vec, std::size_t __n, std::size_t __shift) {
 
 /* Lshift bits by bits. */
 inline constexpr void
-bits_lshift(vec2 __vec, std::size_t __n, std::size_t __shift) {
+bits_lshift(vec2 __vec, size_t __n, size_t __shift) {
     const auto [__div, __mod] = div_mod(__shift);
 
     const auto __len = div_down(__n);
@@ -348,7 +348,7 @@ bits_lshift(vec2 __vec, std::size_t __n, std::size_t __shift) {
 
 /* Lshift bits by bits. */
 inline constexpr void
-bits_rshift(vec2 __vec, std::size_t __n, std::size_t __shift) {
+bits_rshift(vec2 __vec, size_t __n, size_t __shift) {
     const auto [__div, __mod] = div_mod(__shift);
 
     const auto __len = div_down(__n);
@@ -374,7 +374,7 @@ bits_rshift(vec2 __vec, std::size_t __n, std::size_t __shift) {
 
 /* Perform left shift operation without any validation. */
 inline constexpr void
-do_lshift(vec2 __vec, std::size_t __n, std::size_t __shift) {
+do_lshift(vec2 __vec, size_t __n, size_t __shift) {
     if (__shift % __WBits != 0)
         return bits_lshift(__vec, __n, __shift);
     else // __shift % CHAR_BIT == 0. Align to byte.
@@ -383,7 +383,7 @@ do_lshift(vec2 __vec, std::size_t __n, std::size_t __shift) {
 
 /* Perform right shift operation with natural validation. */
 inline constexpr void
-do_rshift(vec2 __vec, std::size_t __n, std::size_t __shift) {
+do_rshift(vec2 __vec, size_t __n, size_t __shift) {
     if (__shift % __WBits != 0)
         return bits_rshift(__vec, __n, __shift);
     else // __shift % CHAR_BIT == 0. Align to byte.
@@ -399,7 +399,7 @@ struct dynamic_bitset : private __detail::__bitset::dynamic_storage {
     using _Bitset   = dynamic_bitset;
     using reference = __detail::__bitset::reference;
 
-    inline static constexpr std::size_t npos = -1;
+    inline static constexpr size_t npos = -1;
 
   private:
     using _Base_t = __detail::__bitset::dynamic_storage;
@@ -418,16 +418,16 @@ struct dynamic_bitset : private __detail::__bitset::dynamic_storage {
     constexpr dynamic_bitset &operator = (const dynamic_bitset &) = default;
     constexpr dynamic_bitset &operator = (dynamic_bitset &&) noexcept = default;
 
-    constexpr dynamic_bitset(std::size_t __n) : _Base_t(__n, nullptr) {}
+    constexpr dynamic_bitset(size_t __n) : _Base_t(__n, nullptr) {}
 
-    constexpr dynamic_bitset(std::size_t __n, bool __x) : _Base_t(__n) {
+    constexpr dynamic_bitset(size_t __n, bool __x) : _Base_t(__n) {
         __detail::__bitset::word_reset(this->data(), __x, this->word_count());
         if (__x) __detail::__bitset::validate(this->data(), length);
     }
 
     constexpr dynamic_bitset(std::string_view __str) : dynamic_bitset(__str.size()) {
         length = __str.size();
-        for (std::size_t i = 0 ; i != length ; ++i)
+        for (size_t i = 0 ; i != length ; ++i)
             if (__str[i] == '1') this->set(i);
     }
 
@@ -449,7 +449,7 @@ struct dynamic_bitset : private __detail::__bitset::dynamic_storage {
         return *this;
     }
 
-    constexpr _Bitset &operator <<= (std::size_t __n) {
+    constexpr _Bitset &operator <<= (size_t __n) {
         if (!length) return this->assign(__n, 0), *this;
         length += __n;
 
@@ -470,7 +470,7 @@ struct dynamic_bitset : private __detail::__bitset::dynamic_storage {
         return *this;
     }
 
-    constexpr _Bitset &operator >>= (std::size_t __n) {
+    constexpr _Bitset &operator >>= (size_t __n) {
         if (__n < length) {
             length -= __n;
             const auto __data = this->data();
@@ -493,7 +493,7 @@ struct dynamic_bitset : private __detail::__bitset::dynamic_storage {
 
     constexpr _Bitset &flip() {
         const auto __size = this->word_count();
-        for (std::size_t i = 0 ; i != __size ; ++i)
+        for (size_t i = 0 ; i != __size ; ++i)
             this->data(i) = ~this->data(i);
         __detail::__bitset::validate(this->data(), length);
         return *this;
@@ -510,53 +510,53 @@ struct dynamic_bitset : private __detail::__bitset::dynamic_storage {
     /* Return whether all bits are set to 1. */
     constexpr bool all() const {
         auto [__div, __mod] = __detail::__bitset::div_mod(length);
-        for (std::size_t i = 0 ; i != __div ; ++i)
+        for (size_t i = 0 ; i != __div ; ++i)
             if (~data(i) != 0) return false;
         return data(__div) == __detail::__bitset::mask_low(__mod);
     }
     /* Return whether all bits are set to 0. */
     constexpr bool none() const {
         auto __top = this->word_count();
-        for (std::size_t i = 0 ; i != __top ; ++i)
+        for (size_t i = 0 ; i != __top ; ++i)
             if (data(i) != 0) return false;
         return true;
     }
 
     /* Return the number of bits set to 1. */
-    constexpr std::size_t count() const {
-        std::size_t __cnt = 0;
+    constexpr size_t count() const {
+        size_t __cnt = 0;
         auto __top = this->word_count();
-        for (std::size_t i = 0 ; i != __top ; ++i)
+        for (size_t i = 0 ; i != __top ; ++i)
             __cnt += std::popcount(data(i));
         return __cnt;
     }
 
-    constexpr void set(std::size_t __n)       { (*this)[__n].set();     }
-    constexpr void reset(std::size_t __n)     { (*this)[__n].reset();   }
-    constexpr void flip(std::size_t __n)      { (*this)[__n].flip();    }
+    constexpr void set(size_t __n)       { (*this)[__n].set();     }
+    constexpr void reset(size_t __n)     { (*this)[__n].reset();   }
+    constexpr void flip(size_t __n)      { (*this)[__n].flip();    }
 
-    constexpr bool test(std::size_t __n) const {
+    constexpr bool test(size_t __n) const {
         auto [__div, __mod] = __detail::__bitset::div_mod(__n);
         return (data(__div) >> __mod) & 1;
     }
 
-    constexpr std::size_t size()  const { return length; }
+    constexpr size_t size()  const { return length; }
 
-    constexpr reference operator [] (std::size_t __n) {
+    constexpr reference operator [] (size_t __n) {
         auto [__div, __mod] = __detail::__bitset::div_mod(__n);
         return reference(data() + __div, __mod);
     }
-    constexpr reference at(std::size_t __n) { this->range_check(__n); return (*this)[__n]; }
-    constexpr bool operator [] (std::size_t __n) const { return test(__n); }
-    constexpr bool at(std::size_t __n) const { range_check(__n); return test(__n); }
+    constexpr reference at(size_t __n) { this->range_check(__n); return (*this)[__n]; }
+    constexpr bool operator [] (size_t __n) const { return test(__n); }
+    constexpr bool at(size_t __n) const { range_check(__n); return test(__n); }
 
     constexpr reference front() { return (*this)[0]; }
     constexpr reference back()  { return (*this)[length - 1]; }
     constexpr bool front() const { return test(0); }
     constexpr bool back()  const { return test(length - 1); }
 
-    constexpr std::size_t find_first();
-    constexpr std::size_t find_next(std::size_t);
+    constexpr size_t find_first();
+    constexpr size_t find_next(size_t);
 
   public:
     /* Section of member functions that may bring size changes. */
@@ -573,7 +573,7 @@ struct dynamic_bitset : private __detail::__bitset::dynamic_storage {
     constexpr void pop_back() noexcept { return _Base_t::pop_back(); }
     constexpr void clear()    noexcept { return _Base_t::clear();    }
 
-    constexpr void assign(std::size_t __n, bool __x) {
+    constexpr void assign(size_t __n, bool __x) {
         length = __n;
 
         const auto __size = this->word_count();
@@ -595,7 +595,7 @@ struct dynamic_bitset : private __detail::__bitset::dynamic_storage {
     void debug() {
         using namespace __detail::__bitset;
         const auto [__div, __mod] = div_mod(length);
-        for (std::size_t i = 0 ; i != __div ; ++i) {
+        for (size_t i = 0 ; i != __div ; ++i) {
             auto __str = std::bitset <__WBits> (data(i)).to_string();
             std::reverse(__str.begin(), __str.end());
             std::cout << __str << '\n';
@@ -603,14 +603,14 @@ struct dynamic_bitset : private __detail::__bitset::dynamic_storage {
         if (__mod != 0) {
             auto __str = std::bitset <__WBits> (data(__div)).to_string();
             std::reverse(__str.begin(), __str.end());
-            for (std::size_t i = __mod ; i != __WBits ; ++i)
+            for (size_t i = __mod ; i != __WBits ; ++i)
                 if (__str[i] != '0') throw std::runtime_error("Invalid bitset.");
                 else __str[i] = '-';
             std::cout << __str << '\n';
         }
     }
 
-    constexpr void range_check(std::size_t __n) const {
+    constexpr void range_check(size_t __n) const {
         if (__n >= length)
             throw std::out_of_range("dynamic_bitset::range_check");
     }
