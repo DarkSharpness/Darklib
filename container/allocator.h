@@ -32,7 +32,7 @@ struct allocator {
     }
 
     [[nodiscard,__gnu__::__always_inline__]]
-    constexpr static _Tp *calloc(size_t __n) {
+    constexpr static _Tp *zeallocate(size_t __n) {
         static_assert(std::is_integral_v <_Tp>,
             "Only integral types are allowed in calloc now.");
         if (std::is_constant_evaluated()) {

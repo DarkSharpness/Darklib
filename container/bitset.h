@@ -34,7 +34,7 @@ mask_top(size_t __n) { return (~_Word_t{0}) << __n; }
 
 /* Allocate a sequence of zero memory. */
 inline constexpr _Word_t *
-alloc_zero(size_t __n) { return allocator<_Word_t>::calloc(__n); }
+alloc_zero(size_t __n) { return allocator<_Word_t>::zeallocate(__n); }
 
 /* Allocate a sequence of raw memory. */
 inline constexpr _Word_t *
