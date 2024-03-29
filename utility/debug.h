@@ -1,5 +1,12 @@
 #pragma once
+// Default to use DBG LIB.
 #ifdef _DEBUG
+#ifndef _USEDBG
+#define _USEDBG
+#endif
+#endif
+
+#ifdef _USEDBG
 #include "console.h"
 #include <source_location>
 
@@ -41,14 +48,7 @@ using normal    = __detail::__debug::printer <console::Color::GREEN>;
 #define panic_handler(x,y) do { ::dark::debug::panic_handler(x,y); } while (0)
 #endif // panic_handler
 
-#ifdef _RELEASE
-#undef panic_handler
-// In release mode, we can still use the debug library,
-// while the panic handler will be turned off.
-#define panic_handler(x,y) __builtin_unreachable()
-#endif // _RELEASE
-
-#endif // _DEBUG
+#endif // _USEDBG
 
 #ifndef panic_handler
 // Define the default panic handler.
@@ -68,8 +68,7 @@ using normal    = __detail::__debug::printer <console::Color::GREEN>;
  * but don't want to use the debug-mode panic_handler, you have 2 options:
  * 
  * 1. Define your own panic_handler, place it in the top of your code.
- * 2. Define _RELEASE macro along with _DEBUG macro. Panic will still
- *  expand to __builtin_unreachable() in this mode.
+ * 2. Define _USEDBG to manually enable debug helper.
  * 
  * @attention This function will never return!
  */
