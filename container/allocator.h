@@ -44,6 +44,17 @@ struct allocator {
         }
     }
 
+    [[nodiscard,__gnu__::__always_inline__]]
+    constexpr static _Tp *reallocate(_Tp *__ptr, size_t __n) {
+        static_assert(std::is_trivial_v <_Tp>,
+            "Only trivial types are allowed in realloc now.");
+        if (std::is_constant_evaluated()) {
+            return std::allocator <_Tp> {}.reallocate(__ptr,__n);
+        } else {
+            return static_cast <_Tp *> (::std::realloc(__ptr,__n * __N));
+        }
+    }
+
     [[__gnu__::__always_inline__]]
     constexpr static void deallocate(_Tp *__ptr,[[maybe_unused]] size_t __n)
     noexcept {
