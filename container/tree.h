@@ -103,8 +103,10 @@ struct link_leaf {
         (node *__restrict __node, node *__restrict __temp) const {
         if constexpr (!_Has_Child) {
             /* __temp equals to nullptr */
+            assert(__temp == nullptr, "Link leaf failed.");
             __node->child[_Dir] = nullptr;
         } else {
+            assert(__temp != nullptr, "Link leaf failed.");
             __node->child[_Dir] = __temp;
             __temp->parent      = __node;
         }
@@ -249,6 +251,7 @@ inline constexpr void swap_next(node *__restrict __node) {
 template <bool _Has_Child>
 inline constexpr void rotate(node *__restrict __x, Direction _Dir) {
     auto __p = __x->parent;         // Parent.
+    assert(__p->child[_Dir] == __x, "Rotate failed.");
 
     /* Update the parent first. */
     relink_parent(__p, __x);
@@ -273,6 +276,8 @@ inline constexpr void zigzag(node *__restrict __x, Direction _Dir) {
     auto __p = __x->parent;         // Parent.
     auto __g = __p->parent;         // Grandparent.
 
+    assert(__p->child[ _Dir] == __x
+        && __g->child[!_Dir] == __p, "Zigzag failed.");
 
     relink_parent(__g, __x);
 
