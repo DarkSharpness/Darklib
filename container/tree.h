@@ -277,24 +277,13 @@ inline constexpr void zigzag(node *__restrict __x, Direction _Dir) {
 }
 
 /**
- * @return True if the node is white or nullptr.
- * @attention Leaf nodes may be nullptr,
- * and we treat them just as white nodes.
- */
-template <bool _Is_Leaf>
-inline constexpr bool non_black(node *__x) {
-    if constexpr (_Is_Leaf) return !__x;
-    else return __x->color == WHITE;
-}
-
-/**
  * @return True if the node is black or nullptr.
  * @attention Leaf nodes may be nullptr,
  * and we treat them just as white nodes.
  */
-template <bool _Is_Leaf>
+template <bool _May_Null>
 inline constexpr bool non_white(node *__x) {
-    if constexpr (_Is_Leaf) return !__x;
+    if constexpr (_May_Null) return !__x;
     else return __x->color != WHITE;
 }
 
@@ -331,12 +320,18 @@ inline constexpr void insert(node *__x) {
     auto __p = __x->parent;     // Parent node.
     auto __u = __p->other();    // Uncle/Aunt node.
 
-    if (non_black <_Is_Leaf> (__u))
+    if (non_white <_Is_Leaf> (__u))
         return insert_fix <_Is_Leaf> (__x);
+    /* __u is non-null white colored. */
 
     __p->color = __u->color = BLACK;
     __p->parent->color = WHITE;
     return insert <false> (__p->parent);
+}
+
+/* Insert a leaf node. */
+inline constexpr void insert_at(node *__x) {
+    return insert <true> (__x);
 }
 
 
@@ -421,8 +416,7 @@ inline constexpr bool erase_adjust(node *__x) {
     return false;
 }
 
-
-/* Erase the node. */
+/* Erase any node. */
 inline constexpr void erase_at(node *__x) {
     if (erase_adjust(__x)) return;
     erase <true> (__x);
@@ -431,8 +425,6 @@ inline constexpr void erase_at(node *__x) {
 
 
 } // namespace __detail::__tree
-
-
 
 
 } // namespace dark
