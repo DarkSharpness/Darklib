@@ -124,6 +124,14 @@ try_link_child(Direction) -> try_link_child <nullptr>;
 /* Helper functions. */
 namespace __detail::__tree {
 
+inline constexpr void init_node(node *__node, node *__init = nullptr) {
+    if (std::is_constant_evaluated()) {
+        __node->color = WHITE;
+        __node->size  = 0;
+    } else __node->info = 0;
+    __node->child[0] = __node->child[1] = __node->parent = __init;
+}
+
 template <Direction _Dir>
 inline constexpr auto get_most(node *__node) -> node * {
     while (auto __next = __node->child[_Dir])
@@ -171,8 +179,6 @@ relink_parent(node *__restrict __node, node *__restrict __next) {
         __head->child[__node->direction()] = __next;
     __next->parent = __head;
 }
-
-
 
 /* Swap the information only. */
 inline constexpr void
@@ -437,9 +443,89 @@ inline constexpr void erase_at(node *__x) {
 
 namespace __detail::__tree {
 
+struct ordered_tree {
+  protected:
+    using _Header_t = node; // Header keeping track of the tree-size.
+    using _Base_t   = node; // Basic node type.
+
+    _Header_t header;
+    _Base_t *root() const { return header.parent; }
+    bool has_root() const { return root() != &header; }
+
+    /* Must be inherited to apply. */
+    ordered_tree() noexcept { init_node(&header, &header); }
+
+  public:
+    size_t size() const noexcept { return header.size; }
+    bool empty()  const noexcept { return size() == 0; }
+};
+
+// template <typename _Tp, typename _Compare>
+template <typename _View_t, typename _Key_t, typename _Compare>
+inline constexpr auto
+locate_key(node *__node, const _Key_t &__val, _Compare &__comp) {
+    struct result { node *node; bool from; bool found; };
+    bool     __from; // No need to init.
+    node *__prev; // No need to init.
+    do {
+        auto __cmp = __comp(__val, _View_t::key(__node));
+        if (__cmp < 0) {
+            __prev = __node;
+            __from = LT;
+            __node = __node->child[LT];
+        } else if (__cmp > 0) {
+            __prev = __node;
+            __from = RT;
+            __node = __node->child[RT];
+        } else return result { __prev, __from , 1 };
+    } while (__node);
+    return result { __prev, __from , 0 };
+}
+
+inline constexpr size_t get_left_size(node *__node) {
+    auto __left = __node->child[LT];
+    return __left ? __left->size : 0;
+}
+
+inline constexpr auto locate_size(node *__node, size_t __rank) {
+    static_assert(sizeof(unsigned) < sizeof(size_t));
+    struct result { node *node; bool from; bool found; };
+    do {
+        ssize_t __sub = __rank - get_left_size(__node);
+        if (__sub < 0) {
+            __node = __node->child[LT];
+        } else if (__sub > 0) {
+            __node = __node->child[RT]; 
+            __rank = __sub - 1;
+        } else return __node;
+    } while (__node);
+    panic("Undefined rank.");
+}
+
+template <typename _View_t>
+struct node_viewer {
+    using _Node_t = value_node <_Value_t>;
+    static constexpr decltype(auto) key(node *__node) {
+        return _View_t::key(static_cast <_Node_t *> (__node)->value);
+    }
+};
+
+template <typename _Key_t>
+struct self_key {
+    static decltype(auto) key(const _Key_t &__val) { return __val; }
+};
+
+template <typename _Pair_t>
+struct pair_key {
+    static decltype(auto) key(const _Pair_t &__val) {
+        auto &&[__key, __] = __val; return __key;
+    }
+};
 
 
 } // namespace __detail::__tree
+
+
 
 
 
