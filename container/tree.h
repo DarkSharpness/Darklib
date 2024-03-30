@@ -8,8 +8,8 @@ namespace __detail::__tree {
 enum Direction  : bool  { LT = 0, RT = 1 };
 enum Color      : bool  { WHITE = 0, BLACK = 1 };
 
-inline constexpr Direction operator !(Direction __dir) {
-    return static_cast <Direction> (!static_cast <bool> (__dir));
+inline constexpr Direction operator !(Direction _Dir) {
+    return static_cast <Direction> (!static_cast <bool> (_Dir));
 }
 
 struct node {
@@ -23,7 +23,6 @@ struct node {
     node *parent;      // Parent node.
     node *child[2];    // Left and right child.
 
-
     /* Return whether the node is root or header. */
     constexpr bool is_special() const {
         return parent->parent == this;
@@ -32,21 +31,95 @@ struct node {
     constexpr bool is_header() const {
         return this->is_special() && color == WHITE;
     }
-    /* Update parent's children and return parent. */
-    constexpr auto update_parent(node *__next) {
-        auto *__restrict __head = parent;
-        if (__head->parent == this) // Parent is header.
-            __head->parent = __next;
-        else // Dummy case, normal modification.
-            __head->child[__head->child[0] != this] = __next;
-        return __head;
+    /* Return the direction of the node. */
+    constexpr auto direction() const {
+        return static_cast <Direction> (parent->child[0] != this);
+    }
+    /* Return whether the direction is true. */
+    constexpr bool is_direction(Direction __d) const {
+        return parent->child[__d] == this;
+    }
+    /* Return the brother/sister of the node. */
+    constexpr auto other() const {
+        return parent->child[!direction()];
     }
 };
-
 static_assert(sizeof(node) == 32);
 
 template <typename _Tp>
 using value_node = __node::value_node<_Tp, node>;
+
+template <auto _Dir>
+struct link_child {
+    /**
+     * @brief Set node's child as targeted and make link.
+     * @param __node Parent node. Of course non-null.
+     * @param __temp New child node. Must be non-null.
+     * @attention __temp should not be a nullptr.
+     */
+    constexpr link_child
+        (node *__restrict __node, node *__restrict __temp)
+    { __node->child[_Dir] = __temp; __temp->parent = __node; }
+};
+
+template <auto _Dir>
+struct try_link_child {
+    /**
+     * @brief Set node's child as targeted and make link.
+     * @param __node Parent node. Of course non-null.
+     * @param __temp New child node. Can be nullptr.
+     * @attention The only difference from link_child is that
+     * this function allows the child to be nullptr.
+     */
+    constexpr try_link_child
+        (node *__restrict __node, node *__restrict __temp)
+    { __node->child[_Dir] = __temp; if (__temp) __temp->parent = __node; }
+};
+
+template <>
+struct link_child <nullptr> {
+    const bool _Dir;
+    constexpr link_child(bool _Dir) : _Dir(_Dir) {}
+    constexpr void operator()
+        (node *__restrict __node, node *__restrict __temp)
+    const { __node->child[_Dir] = __temp; __temp->parent = __node; }
+};
+
+template <>
+struct try_link_child <nullptr> {
+    const bool _Dir;
+    constexpr try_link_child(bool _Dir) : _Dir(_Dir) {}
+    constexpr void operator()
+        (node *__restrict __node, node *__restrict __temp)
+    const { __node->child[_Dir] = __temp; if (__temp) __temp->parent = __node; }
+};
+
+template <bool _Is_Leaf>
+struct link_leaf {
+    const bool _Dir;
+    constexpr link_leaf(bool _Dir) : _Dir(_Dir) {}
+    /* Safely link on non-leaf cases. */
+    constexpr void operator()
+        (node *__restrict __node, node *__restrict __temp) const {
+        if constexpr (_Is_Leaf) {
+            /* __temp is a leaf's son: nullptr */
+            __node->child[_Dir] = nullptr;
+        } else {
+            __node->child[_Dir] = __temp;
+            __temp->parent      = __node;
+        }
+    }
+};
+
+/* Dynamicly binding the direction. */
+link_child(Direction) -> link_child <nullptr>;
+/* Dynamicly binding the direction. */
+try_link_child(Direction) -> try_link_child <nullptr>;
+
+} // namespace __detail::__tree
+
+
+namespace __detail::__tree {
 
 template <Direction _Dir>
 inline constexpr auto get_most(node *__node) -> node * {
@@ -82,6 +155,21 @@ inline constexpr auto advance(node *__node) -> node * {
     panic("Tree advance failed.");
 }
 
+/**
+ * @brief Update __node's parent's son __node to __next
+ * @attention __next'parent will be set to __node's parent.
+ */
+inline constexpr void
+relink_parent(node *__restrict __node, node *__restrict __next) {
+    auto *__restrict __head = __node->parent;
+    if (__head->parent == __node) // __node is root.
+        __head->parent = __next;
+    else
+        __head->child[__node->direction()] = __next;
+    __next->parent = __head;
+}
+
+/* Swap the information only. */
 inline constexpr void
 swap_info(node *__restrict __node, node *__restrict __next) {
     if (std::is_constant_evaluated()) {
@@ -92,22 +180,6 @@ swap_info(node *__restrict __node, node *__restrict __next) {
     }
 }
 
-inline constexpr auto
-swap_parent(node *__restrict __node, node *__restrict __next) -> node * {
-    auto __head = __node->update_parent(__next);
-    auto __temp = __next->parent;
-    __next->parent = __head;
-    return __temp;
-}
-
-inline constexpr void
-swap_left(node *__restrict __node, node *__restrict __next) {
-    auto __left = __node->child[LT];
-    __left->parent    = __next;
-    __next->child[LT] = __left;
-    __node->child[LT] = nullptr;
-}
-
 /**
  * @note
  * __node->child[RT] == __next  &&
@@ -115,21 +187,19 @@ swap_left(node *__restrict __node, node *__restrict __next) {
  * __next->child[LT] == nullptr
  */
 inline constexpr void
-swap_next_adjacent(node *__node, node *__next) {
+swap_next_adjacent(node *__restrict __node, node *__restrict __next) {
     swap_info(__node, __next);
 
     /* Swap parent information */
-    swap_parent(__node, __next);
-    __node->parent = __next;
+    relink_parent(__node, __next);
 
-    /* Swap left information */
-    swap_left(__node, __next);
+    auto __left = __node->child[LT];    // node's left
+    auto __succ = __next->child[RT];    // node's right
 
-    /* Swap right information */
-    __node->child[RT] = __next->child[RT];
-    if (auto __succ = __next->child[RT])
-        __succ->parent = __node;
-    __next->child[RT] = __node;
+    link_child <LT> (__next, __left);
+    link_child <RT> (__next, __node);
+    try_link_child <LT> (__node, nullptr);
+    try_link_child <RT> (__node, __succ);
 }
 
 /**
@@ -143,26 +213,18 @@ swap_next_distant(node *__restrict __node, node * __restrict __next) {
     swap_info(__node, __next);
 
     /* Swap parent information */
-    auto __head = swap_parent(__node, __next);
-    __node->parent = __head;
-    __head->child[LT] = __node; // Must be left son.
+    auto __head = __next->parent;
+    relink_parent(__node, __next);
+    link_child <LT> (__head, __node);
 
-    /* Swap left information */
-    swap_left(__node, __next);
+    auto __left = __node->child[LT];    // node's left
+    auto __temp = __next->child[RT];    // node's right
+    auto __succ = __next->child[RT];    // next's right
 
-    /* Swap right information */
-    auto __node_right = __node->child[RT];
-    auto __next_right = __next->child[RT];
-
-    __next->child[RT] = __node_right;
-    __node->child[RT] = __next_right;
-
-    if (__next_right != nullptr)
-        __next_right->parent = __node;
-    if (__node_right != nullptr)
-        __node_right->parent = __next;
-    else // This should never happen!
-        panic("Invalid tree in swap_next.");
+    link_child <LT> (__next, __left);
+    link_child <RT> (__next, __temp);
+    try_link_child <LT> (__node, nullptr);
+    try_link_child <RT> (__node, __succ);
 }
 
 /* Find the successor and swap with it. */
@@ -178,22 +240,85 @@ inline constexpr void swap_next(node *__restrict __node) {
 /**
  * @note
  * __x != root &&
- * __x->parent->child[__dir] == __x
+ * __x->parent->child[_Dir] == __x
  */
-inline constexpr void rotate(node *__x, Direction __dir) {
-    auto *__p = __x->parent;        // Parent.
-    auto &__a = __p->child[__dir];  // This side. (old = __x)
-    auto &__b = __x->child[!__dir]; // Opposite side.
+template <bool _Is_Leaf>
+inline constexpr void rotate(node *__restrict __x, Direction _Dir) {
+    auto __p = __x->parent;         // Parent.
+    relink_parent(__p, __x);        // Relink parent.
 
-    /* Relink the opposite side's son to old parent. */
-    __a = __b;
-    __b = __p;
-    if (__a != nullptr) __a->parent = __p;
-
-    /* Update parent related information. */
-    __x->parent = __p->update_parent(__x);
-    __p->parent = __x;
+    /* Safely relink the parent's children. */
+    link_leaf<_Is_Leaf>{!_Dir}(__p, __x->child[_Dir]);
+    /* Link the new children of x. */
+    link_child{_Dir}(__x, __p);
 }
+
+/**
+ * @note
+ * __x != root &&
+ * __x->parent->child[_Dir] == __x
+ */
+template <bool _Is_Leaf>
+inline constexpr void zigzag(node *__restrict __x, Direction _Dir) {
+    auto __p = __x->parent;         // Parent.
+    auto __g = __p->parent;         // Grandparent.
+    relink_parent(__g, __x);        // Relink grandparent.
+
+    link_leaf<_Is_Leaf>{!_Dir}(__g, __x->child[_Dir]);
+    link_leaf<_Is_Leaf>{ _Dir}(__p, __x->child[!_Dir]);
+
+    link_child{ _Dir}(__x, __g);
+    link_child{!_Dir}(__x, __p);
+}
+
+/* Special case that both __x and its parent is white. */
+template <bool _Is_Leaf>
+inline constexpr void insert_fix(node *__x) {
+    auto __p = __x->parent;     // Parent node.
+    auto __g = __p->parent;     // Grandparent node.
+    __g->color = WHITE;         // Grand is always white.
+
+    auto _Dir = __x->direction();
+    if (__p->is_direction(_Dir)) {
+        __p->color = BLACK;
+        return rotate <_Is_Leaf> (__p, _Dir);
+    } else { // Zig-zag case.
+        __x->color = BLACK;
+        return zigzag <_Is_Leaf> (__x, _Dir);
+    }
+}
+
+/* Insert at a none-leaf inner node. */
+inline constexpr void insert_none(node *__x) {
+    // The header is always white, while the root should be black.
+    while (__x->parent->color == WHITE) {
+        if (__x->is_special())      // __x is root case
+            return __x->color = BLACK, void();
+
+        /* Because parent is white , parent can't be root. */
+        auto __p = __x->parent;     // Parent node.
+        auto __u = __p->other();    // Uncle node.
+        if (__u->color == WHITE)    // Double red.
+            return insert_fix <false> (__x);
+
+        __p->color = __u->color = BLACK;
+        (__x = __p->parent)->color = WHITE; // Move up.
+    }
+}
+
+/* Insert at a non-root leaf node. */
+inline constexpr void insert_leaf(node *__x) {
+    if (__x->parent->color != WHITE) return;
+    auto __p = __x->parent;     // Parent node.
+    auto __u = __p->other();    // Uncle node.
+    if (__u == nullptr)
+        return insert_fix <true> (__x);
+
+    __p->color = __u->color = BLACK;
+    __p->parent->color = WHITE;
+    return insert_none(__p->parent);
+}
+
 
 } // namespace __detail::__tree
 
