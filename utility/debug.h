@@ -74,3 +74,5 @@ using normal    = __detail::__debug::printer <console::Color::GREEN>;
  */
 #define panic(x) panic_handler(x, std::source_location::current())
 #endif // panic
+
+#define assert(x,y) do { if (!(x)) panic(y); } while (0)
