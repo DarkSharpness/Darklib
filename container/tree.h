@@ -23,11 +23,11 @@ struct node {
     node *parent;      // Parent node.
     node *child[2];    // Left and right child.
 
-    /* Return whether the node is root or header. */
+    /* Return true if the node is root or header. */
     constexpr bool is_special() const {
         return parent->parent == this;
     }
-    /* Return whether the node is header. */
+    /* Return true if the node is header. */
     constexpr bool is_header() const {
         return this->is_special() && color == WHITE;
     }
@@ -35,9 +35,9 @@ struct node {
     constexpr auto direction() const {
         return static_cast <Direction> (parent->child[0] != this);
     }
-    /* Return whether the direction is true. */
-    constexpr bool is_direction(Direction __d) const {
-        return parent->child[__d] == this;
+    /* Return whether the node is on certain direction. */
+    constexpr bool is_direction(Direction _Dir) const {
+        return parent->child[_Dir] == this;
     }
     /* Return the brother/sister of the node. */
     constexpr auto other() const {
@@ -94,15 +94,15 @@ struct try_link_child <nullptr> {
     const { __node->child[_Dir] = __temp; if (__temp) __temp->parent = __node; }
 };
 
-template <bool _Is_Leaf>
+template <bool _Has_Child>
 struct link_leaf {
     const bool _Dir;
     constexpr link_leaf(bool _Dir) : _Dir(_Dir) {}
     /* Safely link on non-leaf cases. */
     constexpr void operator()
         (node *__restrict __node, node *__restrict __temp) const {
-        if constexpr (_Is_Leaf) {
-            /* __temp is a leaf's son: nullptr */
+        if constexpr (!_Has_Child) {
+            /* __temp equals to nullptr */
             __node->child[_Dir] = nullptr;
         } else {
             __node->child[_Dir] = __temp;
@@ -119,6 +119,7 @@ try_link_child(Direction) -> try_link_child <nullptr>;
 } // namespace __detail::__tree
 
 
+/* Helper functions. */
 namespace __detail::__tree {
 
 template <Direction _Dir>
@@ -168,6 +169,8 @@ relink_parent(node *__restrict __node, node *__restrict __next) {
         __head->child[__node->direction()] = __next;
     __next->parent = __head;
 }
+
+
 
 /* Swap the information only. */
 inline constexpr void
@@ -238,38 +241,67 @@ inline constexpr void swap_next(node *__restrict __node) {
 }
 
 /**
+ * @tparam _Has_Child Whether the node has child[_Dir].
  * @note
  * __x != root &&
  * __x->parent->child[_Dir] == __x
  */
-template <bool _Is_Leaf>
+template <bool _Has_Child>
 inline constexpr void rotate(node *__restrict __x, Direction _Dir) {
     auto __p = __x->parent;         // Parent.
     relink_parent(__p, __x);        // Relink parent.
 
     /* Safely relink the parent's children. */
-    link_leaf<_Is_Leaf>{!_Dir}(__p, __x->child[_Dir]);
+    link_leaf<_Has_Child>{!_Dir}(__p, __x->child[_Dir]);
     /* Link the new children of x. */
     link_child{_Dir}(__x, __p);
 }
 
 /**
+ * @tparam _Has_Child Whether the node has both children.
  * @note
  * __x != root &&
  * __x->parent->child[_Dir] == __x
  */
-template <bool _Is_Leaf>
+template <bool _Has_Child>
 inline constexpr void zigzag(node *__restrict __x, Direction _Dir) {
     auto __p = __x->parent;         // Parent.
     auto __g = __p->parent;         // Grandparent.
     relink_parent(__g, __x);        // Relink grandparent.
 
-    link_leaf<_Is_Leaf>{!_Dir}(__g, __x->child[_Dir]);
-    link_leaf<_Is_Leaf>{ _Dir}(__p, __x->child[!_Dir]);
+    link_leaf<_Has_Child>{!_Dir}(__g, __x->child[ _Dir]);
+    link_leaf<_Has_Child>{ _Dir}(__p, __x->child[!_Dir]);
 
     link_child{ _Dir}(__x, __g);
     link_child{!_Dir}(__x, __p);
 }
+
+/**
+ * @return True if the node is white or nullptr.
+ * @attention Leaf nodes may be nullptr,
+ * and we treat them just as white nodes.
+ */
+template <bool _Is_Leaf>
+inline constexpr bool non_black(node *__x) {
+    if constexpr (_Is_Leaf) return !__x;
+    else return __x->color == WHITE;
+}
+
+/**
+ * @return True if the node is black or nullptr.
+ * @attention Leaf nodes may be nullptr,
+ * and we treat them just as white nodes.
+ */
+template <bool _Is_Leaf>
+inline constexpr bool non_white(node *__x) {
+    if constexpr (_Is_Leaf) return !__x;
+    else return __x->color != WHITE;
+}
+
+} // namespace __detail::__tree
+
+/* Insert functions. */
+namespace __detail::__tree {
 
 /* Special case that both __x and its parent is white. */
 template <bool _Is_Leaf>
@@ -281,46 +313,126 @@ inline constexpr void insert_fix(node *__x) {
     auto _Dir = __x->direction();
     if (__p->is_direction(_Dir)) {
         __p->color = BLACK;
-        return rotate <_Is_Leaf> (__p, _Dir);
+        return rotate <!_Is_Leaf> (__p, _Dir);
     } else { // Zig-zag case.
         __x->color = BLACK;
-        return zigzag <_Is_Leaf> (__x, _Dir);
+        return zigzag <!_Is_Leaf> (__x, _Dir);
     }
 }
 
-/* Insert at a none-leaf inner node. */
-inline constexpr void insert_none(node *__x) {
-    // The header is always white, while the root should be black.
-    while (__x->parent->color == WHITE) {
-        if (__x->is_special())      // __x is root case
-            return __x->color = BLACK, void();
-
-        /* Because parent is white , parent can't be root. */
-        auto __p = __x->parent;     // Parent node.
-        auto __u = __p->other();    // Uncle node.
-        if (__u->color == WHITE)    // Double red.
-            return insert_fix <false> (__x);
-
-        __p->color = __u->color = BLACK;
-        (__x = __p->parent)->color = WHITE; // Move up.
-    }
-}
-
-/* Insert at a non-root leaf node. */
-inline constexpr void insert_leaf(node *__x) {
+template <bool _Is_Leaf>
+inline constexpr void insert(node *__x) {
     if (__x->parent->color != WHITE) return;
+
+    // __x is root node. Only happen when not leaf.
+    if (!_Is_Leaf && __x->is_special())
+        return __x->color = BLACK, void();
+
     auto __p = __x->parent;     // Parent node.
-    auto __u = __p->other();    // Uncle node.
-    if (__u == nullptr)
-        return insert_fix <true> (__x);
+    auto __u = __p->other();    // Uncle/Aunt node.
+
+    if (non_black <_Is_Leaf> (__u))
+        return insert_fix <_Is_Leaf> (__x);
 
     __p->color = __u->color = BLACK;
     __p->parent->color = WHITE;
-    return insert_none(__p->parent);
+    return insert <false> (__p->parent);
 }
 
 
 } // namespace __detail::__tree
+
+
+/* Erase functions. */
+namespace __detail::__tree {
+
+/* Replace x with its only child y. */
+inline constexpr void erase_single(node *__x, node *__y) {
+    __y->color = BLACK;
+    relink_parent(__x, __y);
+}
+
+/* Clear the branch containing current node. */
+inline constexpr void erase_bare(node * __node) {
+    auto *__restrict __head = __node->parent;
+    if (__head->parent == __node) // __node is root.
+        __head->parent = nullptr;
+    else
+        __head->child[__node->direction()] = nullptr;
+}
+
+/* Fix the tree after erasing a black leaf. */
+template <bool _Is_Leaf>
+inline constexpr void erase(node *__x) {
+    if (__x->is_special()) return; // x is root.
+
+    auto __p = __x->parent;     // Parent node.
+    auto __b = __p->other();    // Brother/Sister node.
+    auto _Dir = __x->direction();
+
+    if (__b->color == WHITE) {
+        __b->color = BLACK;
+        __p->color = WHITE;
+        rotate <true> (__b, !_Dir);
+        __b = __p->child[!_Dir];
+    }
+    /* Now the brother must be black. */
+
+    /* Inner (zig-zag) side child. */
+    if (auto __i = __b->child[_Dir] ; !non_white <_Is_Leaf> (__i)) {
+        __i->color = __p->color;
+        __p->color = BLACK;
+        return zigzag <!_Is_Leaf> (__i, _Dir);
+    }
+
+    /* Outer (!_Dir) side child. */
+    if (auto __o = __b->child[!_Dir]; !non_white <_Is_Leaf> (__o)) {
+        __o->color = __p->color;
+        return rotate <!_Is_Leaf> (__b, !_Dir);
+    }
+
+    /* Now __b has only black sons. */
+    if (__p->color == WHITE) {
+        __p->color = BLACK;
+        __b->color = WHITE;
+        return; // Done.
+    }
+
+    return erase <false> (__p);
+}
+
+inline constexpr bool erase_adjust(node *__x) {
+    auto __lchild = __x->child[LT];
+    auto __rchild = __x->child[RT];
+
+    if (__lchild) {
+        if (!__rchild) {
+            erase_single(__x, __lchild);
+            return true;
+        }
+        swap_next(__x);
+        __rchild = __x->child[RT];
+    }
+    if (__rchild) {
+        erase_single(__x, __rchild);
+        return true;
+    }
+
+    return false;
+}
+
+
+/* Erase the node. */
+inline constexpr void erase_at(node *__x) {
+    if (erase_adjust(__x)) return;
+    erase <true> (__x);
+    return erase_bare(__x);
+}
+
+
+} // namespace __detail::__tree
+
+
 
 
 } // namespace dark
