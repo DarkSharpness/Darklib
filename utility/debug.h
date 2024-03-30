@@ -20,7 +20,7 @@ struct printer : std::exception {
     explicit printer(std::string __msg)
     noexcept : message(std::move(__msg)) {}
     const char *what() const noexcept override { return message.c_str(); }
-    const void print() const { return console::print(message, _Color); }
+    void print() const { return console::print(message, _Color); }
 };
 
 } // namespace __detail::__debug
