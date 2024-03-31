@@ -532,12 +532,11 @@ locate_key(node *__node, const _Key_t &__val, const _Compare &__comp) {
     return result { __prev, __from , 0 };
 }
 
+// Debug function hidden.
+void debug(const node *__header);
 
 
 } // namespace __detail::__tree
-
-
-
 
 
 } // namespace dark
