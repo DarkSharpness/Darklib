@@ -239,7 +239,7 @@ swap_next_distant(node *__restrict __node, node * __restrict __next) {
     link_child <LT> (__head, __node);
 
     auto __left = __node->child[LT];    // node's left
-    auto __temp = __next->child[RT];    // node's right
+    auto __temp = __node->child[RT];    // node's right
     auto __succ = __next->child[RT];    // next's right
 
     link_child <LT> (__next, __left);
