@@ -460,31 +460,30 @@ struct ordered_tree {
     bool empty()  const noexcept { return size() == 0; }
 };
 
-// template <typename _Tp, typename _Compare>
-template <typename _View_t, typename _Key_t, typename _Compare>
-inline constexpr auto
-locate_key(node *__node, const _Key_t &__val, _Compare &__comp) {
-    struct result { node *node; bool from; bool found; };
-    bool     __from; // No need to init.
-    node *__prev; // No need to init.
-    do {
-        auto __cmp = __comp(__val, _View_t::key(__node));
-        if (__cmp < 0) {
-            __prev = __node;
-            __from = LT;
-            __node = __node->child[LT];
-        } else if (__cmp > 0) {
-            __prev = __node;
-            __from = RT;
-            __node = __node->child[RT];
-        } else return result { __prev, __from , 1 };
-    } while (__node);
-    return result { __prev, __from , 0 };
-}
-
 inline constexpr size_t get_left_size(node *__node) {
     auto __left = __node->child[LT];
     return __left ? __left->size : 0;
+}
+
+template <typename _Key_t>
+struct self_key {
+    using value_type = _Key_t;
+    static const auto &key(const value_type &__val) { return __val; }
+};
+
+template <typename _Pair_t>
+struct pair_key {
+    using value_type = _Pair_t;
+    static const auto &key(const value_type &__val) {
+        auto &&[__key, __] = __val; return __key;
+    }
+};
+
+
+template <typename _View_t>
+decltype(auto) node_key(node *__node) {
+    using _Node_t = value_node <typename _View_t::value_type>;
+    return _View_t::key(static_cast <_Node_t *> (__node)->value);
 }
 
 inline constexpr auto locate_size(node *__node, size_t __rank) {
@@ -502,25 +501,27 @@ inline constexpr auto locate_size(node *__node, size_t __rank) {
     panic("Undefined rank.");
 }
 
-template <typename _View_t>
-struct node_viewer {
-    using _Node_t = value_node <_Value_t>;
-    static constexpr decltype(auto) key(node *__node) {
-        return _View_t::key(static_cast <_Node_t *> (__node)->value);
-    }
-};
+template <typename _View_t, typename _Key_t, typename _Compare>
+inline constexpr auto
+locate_key(node *__node, const _Key_t &__val, const _Compare &__comp) {
+    struct result { node *node; Direction from; bool found; };
+    Direction   __from; // No need to init.
+    node *      __prev; // No need to init.
+    do {
+        auto __cmp = __comp(__val, node_key <_View_t> (__node));
+        if (__cmp < 0) {
+            __prev = __node;
+            __from = LT;
+            __node = __node->child[LT];
+        } else if (__cmp > 0) {
+            __prev = __node;
+            __from = RT;
+            __node = __node->child[RT];
+        } else return result { __node, __from , 1 };
+    } while (__node);
+    return result { __prev, __from , 0 };
+}
 
-template <typename _Key_t>
-struct self_key {
-    static decltype(auto) key(const _Key_t &__val) { return __val; }
-};
-
-template <typename _Pair_t>
-struct pair_key {
-    static decltype(auto) key(const _Pair_t &__val) {
-        auto &&[__key, __] = __val; return __key;
-    }
-};
 
 
 } // namespace __detail::__tree
