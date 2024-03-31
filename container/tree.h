@@ -132,6 +132,16 @@ inline constexpr void init_node(node *__node, node *__init = nullptr) {
     __node->child[0] = __node->child[1] = __node->parent = __init;
 }
 
+inline constexpr void init_root(node *__restrict __root, node *__restrict __head) {
+    __root->color = BLACK;
+    __root->size  = 1;
+    __root->parent = __head;
+    __root->child[0] = __root->child[1] = nullptr;
+
+    __head->size  = 1;
+    __head->child[0] = __head->child[1] = __head->parent = __root;
+}
+
 template <Direction _Dir>
 inline constexpr auto get_most(node *__node) -> node * {
     while (auto __next = __node->child[_Dir])
