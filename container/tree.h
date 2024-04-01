@@ -625,6 +625,7 @@ inline bool operator ==
 (iterator <_Tp, _Dir, _C1> __lhs, iterator <_Tp, _Dir, _C2> __rhs)
 {   return __lhs.base() == __rhs.base();    }
 
+#undef TREE_UNFOLD
 
 } // namespace __detail::__tree
 
