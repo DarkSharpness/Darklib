@@ -124,7 +124,7 @@ try_link_child(Direction) -> try_link_child <nullptr>;
 /* Helper functions. */
 namespace __detail::__tree {
 
-inline constexpr void init_node(node *__node, node *__init = nullptr) {
+inline constexpr void init_node(node *__node, node *__init) {
     if (std::is_constant_evaluated()) {
         __node->color = WHITE;
         __node->size  = 0;
@@ -459,11 +459,35 @@ struct ordered_tree {
     using _Base_t   = node; // Basic node type.
 
     _Header_t header;
-    _Base_t *root() const { return header.parent; }
-    bool has_root() const { return root() != &header; }
+    _Base_t *root() const noexcept { return header.parent; }
+    bool has_root() const noexcept { return root() != &header; }
 
     /* Must be inherited to apply. */
     ordered_tree() noexcept { init_node(&header, &header); }
+
+    _Base_t *min_node() const noexcept { return header.child[RT]; }
+    _Base_t *max_node() const noexcept { return header.child[LT]; }
+
+    /* Insert a node into the map. */
+    void insert_impl(node *__restrict __old, Direction _Dir,
+                     node *__restrict __new) noexcept {
+        ++header.size;
+        auto &__ptr = header.child[!_Dir];
+        if (__old == __ptr) __ptr = __new;
+        init_node(__new, nullptr);
+        link_child{_Dir}(__old, __new);
+        return insert_at(__new);
+    }
+
+    /* Erase a node from the map. */
+    void erase_impl(node *__node) noexcept {
+        if (__node == header.child[LT]) // Update the maximum node.
+            header.child[LT] = __node->child[LT] ? : __node->parent;
+        if (__node == header.child[RT]) // Update the minimum node.
+            header.child[RT] = __node->child[RT] ? : __node->parent;
+        --header.size;
+        return erase_at(__node);
+    }
 
   public:
     size_t size() const noexcept { return header.size; }
@@ -515,8 +539,8 @@ template <typename _View_t, typename _Key_t, typename _Compare>
 inline constexpr auto
 locate_key(node *__node, const _Key_t &__val, const _Compare &__comp) {
     struct result { node *node; Direction from; bool found; };
-    Direction   __from; // No need to init.
-    node *      __prev; // No need to init.
+    Direction   __from {};
+    node *      __prev {};
     do {
         auto __cmp = __comp(__val, node_key <_View_t> (__node));
         if (__cmp < 0) {
@@ -534,6 +558,65 @@ locate_key(node *__node, const _Key_t &__val, const _Compare &__comp) {
 
 // Debug function hidden.
 void debug(const node *__header);
+
+
+} // namespace __detail::__tree
+
+
+/* Iterator part. */
+namespace __detail::__tree {
+
+template <bool, typename _Tp>
+struct condition_const;
+template <typename _Tp>
+struct condition_const <true, _Tp> { using type = const _Tp; };
+template <typename _Tp>
+struct condition_const <false, _Tp> { using type = _Tp; };
+template <bool _Const, typename _Tp>
+using condition_const_t = typename condition_const <_Const, _Tp>::type;
+
+template <typename _Tp, Direction _Dir, bool _Const>
+struct iterator {
+  protected:
+    using _Base_t = condition_const_t <_Const, node>;
+    using _Node_t = condition_const_t <_Const, value_node <_Tp>>;
+
+    _Base_t *ptr;   // Inner pointer.
+
+    node *get() const { return const_cast <node *> (ptr); }
+    _Node_t *cast() const { return static_cast <_Node_t *> (ptr); }
+
+  public:
+    iterator() noexcept = default;
+    explicit iterator(_Base_t *__ptr) noexcept { ptr = __ptr; }
+
+    _Tp &operator *() const noexcept { return  this->cast()->value; }
+    _Tp *operator->() const noexcept { return &this->cast()->value; }
+
+    iterator &operator ++() noexcept {
+        ptr = advance <_Dir> (this->get()); return *this;
+    }
+
+    iterator &operator --() noexcept {
+        ptr = advance <!_Dir> (this->get()); return *this;
+    }
+
+    iterator operator ++(int) noexcept {
+        auto __tmp = *this; ++*this; return __tmp;
+    }
+
+    iterator operator --(int) noexcept {
+        auto __tmp = *this; --*this; return __tmp;
+    }
+
+    /* Return a voided inner pointer. */
+    const void *base() const noexcept { return ptr; }
+};
+
+template <typename _Tp, Direction _Dir, bool _C1, bool _C2>
+inline bool operator ==
+(iterator <_Tp, _Dir, _C1> __lhs, iterator <_Tp, _Dir, _C2> __rhs)
+{   return __lhs.base() == __rhs.base();    }
 
 
 } // namespace __detail::__tree
