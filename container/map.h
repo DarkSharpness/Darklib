@@ -1,6 +1,8 @@
 #pragma once
 #include "tree.h"
 #include "allocator.h"
+#include <compare>
+#include <memory>
 
 namespace dark {
 
@@ -66,7 +68,7 @@ struct map : __detail::__tree::ordered_tree {
             locate_key <_View_t> (this->root(), _View_t::key(__p), this->comp);
         if (__found) return { iterator{__node}, false };
         auto __new_node = this->create_node(__p);
-        this->insert_impl(__node, __from, __new_node);
+        this->insert_aux(__node, __from, __new_node);
         return { iterator{__new_node}, true };
     }
 
@@ -75,17 +77,26 @@ struct map : __detail::__tree::ordered_tree {
         const auto [__node, __from, __found] =
             locate_key <_View_t> (this->root(), __key, this->comp);
         if (!__found) return false;
-        this->erase_impl(__node);
+        this->erase_aux(__node);
         this->destroy_node(static_cast <_Node_t*> (__node));
         return true;
     }
 
-    _Node_t *find(const _Key_t &__key) {
-        if (!this->has_root()) return nullptr;
+    iterator erase(iterator __iter) {
+        auto __node = static_cast <_Node_t *>
+            (const_cast <void *> (__iter.base()));
+        auto __next = ++__iter;
+        this->erase_aux(__node);
+        this->destroy_node(__node);
+        return __next;
+    }
+
+    iterator find(const _Key_t &__key) {
+        if (!this->has_root()) return this->end();
         const auto [__node, __from, __found] =
             locate_key <_View_t> (this->root(), __key, this->comp);
-        if (!__found) return nullptr;
-        return static_cast <_Node_t*> (__node);
+        if (!__found) return this->end();
+        return iterator {__node};
     }
 
     /* An inner debug method. */

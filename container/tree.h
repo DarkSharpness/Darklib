@@ -12,6 +12,10 @@ inline constexpr Direction operator !(Direction _Dir) {
     return static_cast <Direction> (!static_cast <bool> (_Dir));
 }
 
+#define TREE_UNFOLD(x) \
+if (_Dir == LT) { constexpr auto _Dir = LT; x }\
+else            { constexpr auto _Dir = RT; x }
+
 struct node {
     union {
         struct {
@@ -392,6 +396,8 @@ inline constexpr void erase(node *__x) {
     if (__x->is_special()) return;
 
     auto _Dir = __x->direction();
+    // Unfold some branches to speed up.
+    TREE_UNFOLD(
     auto __p = __x->parent;         // Parent node.
     auto __b = __p->child[!_Dir];   // Brother/Sister node.
 
@@ -419,6 +425,7 @@ inline constexpr void erase(node *__x) {
     /* Now __b has only black sons. */
     __b->color = WHITE;
     return erase <false> (__p);
+    )
 }
 
 inline constexpr bool erase_adjust(node *__x) {
@@ -469,8 +476,8 @@ struct ordered_tree {
     _Base_t *max_node() const noexcept { return header.child[LT]; }
 
     /* Insert a node into the map. */
-    void insert_impl(node *__restrict __old, Direction _Dir,
-                     node *__restrict __new) noexcept {
+    void insert_aux(node *__restrict __old, Direction _Dir,
+                    node *__restrict __new) noexcept {
         ++header.size;
         auto &__ptr = header.child[!_Dir];
         if (__old == __ptr) __ptr = __new;
@@ -480,7 +487,7 @@ struct ordered_tree {
     }
 
     /* Erase a node from the map. */
-    void erase_impl(node *__node) noexcept {
+    void erase_aux(node *__node) noexcept {
         if (__node == header.child[LT]) // Update the maximum node.
             header.child[LT] = __node->child[LT] ? : __node->parent;
         if (__node == header.child[RT]) // Update the minimum node.
