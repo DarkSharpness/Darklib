@@ -537,22 +537,21 @@ struct self_view {
 template <typename _Pair_t>
 struct pair_view {
     using value_type = _Pair_t;
-    static const auto &key(const value_type &__val) {
-        auto &&[__key, __] = __val; return __key;
+    static const auto &key(const value_type &__x) {
+        auto &&[__key, __] = __x; return __key;
     }
-    static auto &value(value_type &__val) {
-        auto &&[__key, __val] = __val; return __val;
+    static auto &value(value_type &__x) {
+        auto &&[__, __val] = __x; return __val;
     }
-    static const auto &value(const value_type &__val) {
-        auto &&[__key, __val] = __val; return __val;
+    static const auto &value(const value_type &__x) {
+        auto &&[__, __val] = __x; return __val;
     }
 };
-
 
 template <typename _View_t>
 decltype(auto) node_key(node *__node) {
     using _Node_t = value_node <typename _View_t::value_type>;
-    return _View_t::key(static_cast <_Node_t *> (__node)->value);
+    return _View_t::key(static_cast <_Node_t *> (__node)->data);
 }
 
 inline constexpr auto locate_size(node *__node, size_t __rank) {
@@ -631,8 +630,8 @@ struct iterator {
     template <void * = nullptr> requires _Const
     iterator(_Iter_t __other) noexcept : ptr(__other.get()) {}
 
-    _Tp &operator *() const noexcept { return  this->cast()->value; }
-    _Tp *operator->() const noexcept { return &this->cast()->value; }
+    _Tp &operator *() const noexcept { return  this->cast()->data; }
+    _Tp *operator->() const noexcept { return &this->cast()->data; }
 
     iterator &operator ++() noexcept {
         ptr = advance <_Dir> (this->get()); return *this;

@@ -45,7 +45,7 @@ struct map : protected __detail::__tree::ordered_tree {
     _Node_t *create_node(_Args &&...__args) {
         auto __node = _Alloc_t::allocate(1);
         std::construct_at(
-            std::addressof(__node->value),
+            std::addressof(__node->data),
             std::forward <_Args> (__args)...
         );
         return __node;
@@ -55,7 +55,7 @@ struct map : protected __detail::__tree::ordered_tree {
     _Node_t *create_copy(const _Base_Node_t *__copy) {
         auto __cast = static_cast <const _Node_t *> (__copy);
         auto __node = _Alloc_t::allocate(1);
-        std::construct_at(std::addressof(__node->value), __cast->value);
+        std::construct_at(std::addressof(__node->data), __cast->data);
         __node->info = __copy->info;
         return __node;
     }
@@ -71,8 +71,8 @@ struct map : protected __detail::__tree::ordered_tree {
         return { iterator{__node}, true };
     }
 
-    _Pair_t &get_max() const { return static_cast <_Node_t *> (this->max_node())->value; }
-    _Pair_t &get_min() const { return static_cast <_Node_t *> (this->min_node())->value; }
+    _Pair_t &get_max() const { return static_cast <_Node_t *> (this->max_node())->data; }
+    _Pair_t &get_min() const { return static_cast <_Node_t *> (this->min_node())->data; }
 
     template <__detail::__tree::Direction _Dir>
     void copy(_Base_Node_t *__from, const _Base_Node_t *__copy) {
