@@ -469,11 +469,26 @@ struct ordered_tree {
     _Base_t *root() const noexcept { return header.parent; }
     bool has_root() const noexcept { return root() != &header; }
 
-    /* Must be inherited to apply. */
-    ordered_tree() noexcept { init_node(&header, &header); }
+    /* Constructors must be inherited to be applied. */
+
+    ordered_tree() noexcept { reset(); }
+    ordered_tree(const ordered_tree &__other) noexcept {
+        header.info = __other.header.info;
+    }
+    ordered_tree(ordered_tree &&__other) noexcept {
+        if (!__other.has_root()) { init_node(&header, &header); return; }
+        header = __other.header;
+        header.parent->parent = &header;
+        __other.reset();
+    }
+
+    /* Reset to an empty tree. */
+    void reset() noexcept { init_node(&header, &header); }
 
     _Base_t *min_node() const noexcept { return header.child[RT]; }
     _Base_t *max_node() const noexcept { return header.child[LT]; }
+    _Base_t *end_node()       noexcept { return &header; }
+    const _Base_t *end_node() const noexcept { return &header; }
 
     /* Insert a node into the map. */
     void insert_aux(node *__restrict __old, Direction _Dir,
@@ -496,7 +511,14 @@ struct ordered_tree {
         return erase_at(__node);
     }
 
-  public:
+    /* Update the maximum and minimum node. */
+    void update_root(node *__root) noexcept {
+        header.parent    = __root;
+        __root->parent   = &header;
+        header.child[LT] = get_most <RT> (__root); // Maximum node.
+        header.child[RT] = get_most <LT> (__root); // Minimum node.
+    }
+
     size_t size() const noexcept { return header.size; }
     bool empty()  const noexcept { return size() == 0; }
 };
@@ -507,16 +529,22 @@ inline constexpr size_t get_left_size(node *__node) {
 }
 
 template <typename _Key_t>
-struct self_key {
+struct self_view {
     using value_type = _Key_t;
     static const auto &key(const value_type &__val) { return __val; }
 };
 
 template <typename _Pair_t>
-struct pair_key {
+struct pair_view {
     using value_type = _Pair_t;
     static const auto &key(const value_type &__val) {
         auto &&[__key, __] = __val; return __key;
+    }
+    static auto &value(value_type &__val) {
+        auto &&[__key, __val] = __val; return __val;
+    }
+    static const auto &value(const value_type &__val) {
+        auto &&[__key, __val] = __val; return __val;
     }
 };
 
@@ -587,6 +615,7 @@ struct iterator {
   protected:
     using _Base_t = condition_const_t <_Const, node>;
     using _Node_t = condition_const_t <_Const, value_node <_Tp>>;
+    using _Iter_t = iterator <_Tp, _Dir, false>;    // Mutable iterator.
 
     _Base_t *ptr;   // Inner pointer.
 
@@ -594,8 +623,13 @@ struct iterator {
     _Node_t *cast() const { return static_cast <_Node_t *> (ptr); }
 
   public:
+    /* Default constructor. */
     iterator() noexcept = default;
+    /* Disable implicit conversion. */
     explicit iterator(_Base_t *__ptr) noexcept { ptr = __ptr; }
+    /* Allow to construct from non-const to const. */
+    template <void * = nullptr> requires _Const
+    iterator(_Iter_t __other) noexcept : ptr(__other.get()) {}
 
     _Tp &operator *() const noexcept { return  this->cast()->value; }
     _Tp *operator->() const noexcept { return &this->cast()->value; }
@@ -617,15 +651,23 @@ struct iterator {
     }
 
     /* Return a voided inner pointer. */
-    const void *base() const noexcept { return ptr; }
+    node *base() const noexcept { return ptr; }
+
+    /* Remove the const qualifier. */
+    _Iter_t de_const() const noexcept {
+        return _Iter_t { const_cast <node *> (ptr) };
+    }
 };
 
+/* Compare two iterators. */
 template <typename _Tp, Direction _Dir, bool _C1, bool _C2>
 inline bool operator ==
 (iterator <_Tp, _Dir, _C1> __lhs, iterator <_Tp, _Dir, _C2> __rhs)
 {   return __lhs.base() == __rhs.base();    }
 
+
 #undef TREE_UNFOLD
+
 
 } // namespace __detail::__tree
 
