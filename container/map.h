@@ -18,12 +18,13 @@ struct pair {
 
 } // namespace __detail::__map
 
-using _Key_t    = int;
-using _Val_t    = int;
-using _Pair_t   = __detail::__map::pair <_Key_t, _Val_t>;
-using _View_t   = __detail::__tree::pair_view <_Pair_t>;
-using _Compare_t = std::compare_three_way;
-
+template <
+    typename _Key_t,
+    typename _Val_t,
+    typename _Compare_t = std::compare_three_way,
+    typename _Pair_t    = __detail::__map::pair <_Key_t, _Val_t>,
+    typename _View_t    = __detail::__tree::pair_view <_Pair_t>
+>
 struct map : protected __detail::__tree::ordered_tree {
   protected:
     using _Base_t = __detail::__tree::ordered_tree;
@@ -38,6 +39,7 @@ struct map : protected __detail::__tree::ordered_tree {
     using iterator          = __detail::__tree::iterator <_Pair_t ,RT, 0>;
     using const_iterator    = __detail::__tree::iterator <_Pair_t, RT, 1>;
     using insert_result_t   = struct { iterator iter; bool success; };
+    using value_type        = _Pair_t;
 
   protected:
     /* Create a new node. */
