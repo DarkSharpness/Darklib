@@ -362,6 +362,7 @@ inline constexpr void insert(node *__x) {
 }
 
 /* Insert a leaf node. */
+__attribute((noinline))
 inline constexpr void insert_at(node *__x) {
     return insert <true> (__x);
 }
@@ -391,73 +392,69 @@ inline constexpr void erase_bare(node * __node) {
 /* Fix the tree after erasing a black leaf. */
 template <bool _Is_Leaf>
 inline constexpr void erase(node *__x) {
-    if (__x->color == WHITE)
+    if (!_Is_Leaf && __x->color == WHITE)
         return __x->color = BLACK, void();
     if (__x->is_special()) return;
 
-    auto _Dir = __x->direction();
+    auto __p    = __x->parent;      // Parent node.
+    auto _Dir   = __x->direction();
     // Unfold some branches to speed up.
     TREE_UNFOLD(
-    auto __p = __x->parent;         // Parent node.
-    auto __b = __p->child[!_Dir];   // Brother/Sister node.
+        auto __b = __p->child[!_Dir];   // Brother/Sister node.
 
-    if (__b->color == WHITE) {
-        __b->color = BLACK;
-        __p->color = WHITE;
-        rotate <true> (__b, !_Dir);
-        __b = __p->child[!_Dir];
-    }
-    /* Now the brother must be black. */
+        if (__b->color == WHITE) {
+            __b->color = BLACK;
+            __p->color = WHITE;
+            rotate <true> (__b, !_Dir);
+            __b = __p->child[!_Dir];
+        }
+        /* Now the brother must be black. */
 
-    /* Inner (zig-zag) side child. */
-    if (auto __i = __b->child[_Dir] ; !non_white <_Is_Leaf> (__i)) {
-        __i->color = __p->color;
-        __p->color = BLACK;
-        return zigzag <!_Is_Leaf> (__i, _Dir);
-    }
+        /* Inner (zig-zag) side child. */
+        if (auto __i = __b->child[_Dir] ; !non_white <_Is_Leaf> (__i)) {
+            __i->color = __p->color;
+            __p->color = BLACK;
+            return zigzag <!_Is_Leaf> (__i, _Dir);
+        }
 
-    /* Outer (!_Dir) side child. */
-    if (auto __o = __b->child[!_Dir]; !non_white <_Is_Leaf> (__o)) {
-        __o->color = __p->color;
-        return rotate <!_Is_Leaf> (__b, !_Dir);
-    }
+        /* Outer (!_Dir) side child. */
+        if (auto __o = __b->child[!_Dir]; !non_white <_Is_Leaf> (__o)) {
+            __o->color = __p->color;
+            return rotate <!_Is_Leaf> (__b, !_Dir);
+        }
 
-    /* Now __b has only black sons. */
-    __b->color = WHITE;
-    return erase <false> (__p);
+        /* Now __b has only black sons. */
+        __b->color = WHITE;
+        return erase <false> (__p);
     )
 }
 
-inline constexpr bool erase_adjust(node *__x) {
+__attribute((noinline))
+inline constexpr void erase_leaf(node *__x) { return erase <true> (__x); }
+
+/* Erase any node. */
+inline constexpr void erase_at(node *__x) {
     auto __lchild = __x->child[LT];
     auto __rchild = __x->child[RT];
 
     if (__lchild) {
-        if (!__rchild) {
-            erase_single(__x, __lchild);
-            return true;
-        }
+        if (!__rchild) return erase_single(__x, __lchild);
         swap_next(__x);
         __rchild = __x->child[RT];
     }
-    if (__rchild) {
-        erase_single(__x, __rchild);
-        return true;
-    }
+    if (__rchild)      return erase_single(__x, __rchild);
 
-    return false;
-}
+    /* __x has no child, __lchild = __rchild = nullptr. */
+    if (__x->color != WHITE) erase_leaf(__x);
 
-/* Erase any node. */
-inline constexpr void erase_at(node *__x) {
-    if (erase_adjust(__x)) return;
-    if (__x->color != WHITE) erase <true> (__x);
     return erase_bare(__x);
 }
 
 
 } // namespace __detail::__tree
 
+
+/* Tree part. */
 namespace __detail::__tree {
 
 struct ordered_tree {
@@ -523,7 +520,7 @@ struct ordered_tree {
     bool empty()  const noexcept { return size() == 0; }
 };
 
-inline constexpr size_t get_left_size(node *__node) {
+inline size_t get_left_size(node *__node) {
     auto __left = __node->child[LT];
     return __left ? __left->size : 0;
 }
@@ -549,12 +546,12 @@ struct pair_view {
 };
 
 template <typename _View_t>
-decltype(auto) node_key(node *__node) {
+inline decltype(auto) node_key(node *__node) {
     using _Node_t = value_node <typename _View_t::value_type>;
     return _View_t::key(static_cast <_Node_t *> (__node)->data);
 }
 
-inline constexpr auto locate_size(node *__node, size_t __rank) {
+inline auto locate_size(node *__node, size_t __rank) {
     static_assert(sizeof(unsigned) < sizeof(size_t));
     struct result { node *node; bool from; bool found; };
     do {
@@ -570,8 +567,7 @@ inline constexpr auto locate_size(node *__node, size_t __rank) {
 }
 
 template <typename _View_t, typename _Key_t, typename _Compare>
-inline constexpr auto
-locate_key(node *__node, const _Key_t &__val, const _Compare &__comp) {
+inline auto locate_key(node *__node, const _Key_t &__val, const _Compare &__comp) {
     struct result { node *node; Direction from; bool found; };
     Direction   __from {};
     node *      __prev {};
@@ -628,7 +624,7 @@ struct iterator {
     explicit iterator(_Base_t *__ptr) noexcept { ptr = __ptr; }
     /* Allow to construct from non-const to const. */
     template <void * = nullptr> requires _Const
-    iterator(_Iter_t __other) noexcept : ptr(__other.get()) {}
+    iterator(const _Iter_t &__other) noexcept : ptr(__other.get()) {}
 
     _Tp &operator *() const noexcept { return  this->cast()->data; }
     _Tp *operator->() const noexcept { return &this->cast()->data; }
