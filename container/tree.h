@@ -623,8 +623,8 @@ struct iterator {
     /* Disable implicit conversion. */
     explicit iterator(_Base_t *__ptr) noexcept { ptr = __ptr; }
     /* Allow to construct from non-const to const. */
-    template <void * = nullptr> requires _Const
-    iterator(const _Iter_t &__other) noexcept : ptr(__other.get()) {}
+    iterator(const _Iter_t &__other)
+    noexcept requires _Const : ptr(__other.get()) {}
 
     _Tp &operator *() const noexcept { return  this->cast()->data; }
     _Tp *operator->() const noexcept { return &this->cast()->data; }
